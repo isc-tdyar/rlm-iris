@@ -12,22 +12,30 @@ Property Size As %String;
 
 Property Price As %Numeric;
 
-/// Deterministic population: Colour separates Price sharply, Size does not.
-/// Same shape as the fixture, so a test can compare a Table run against a
-/// Fixture run and expect the same decomposition to be chosen.
+/// A third dimension that separates nothing. Two non-separating dimensions
+/// rather than one, so a policy that ranks candidates is distinguishable from
+/// one that merely rejects the last place-getter.
+Property Weight As %String;
+
+/// Deterministic population: Colour separates Price sharply; Size and Weight
+/// both leave a spread as wide as the whole store. Same shape as the fixture,
+/// so a test can compare a Table run against a Fixture run and expect the same
+/// decomposition to be chosen.
 ClassMethod Populate() As %Status
 {
     Do ..%KillExtent()
     Set rows = $ListBuild(
-        "red|small|10", "red|small|11", "red|large|12", "red|large|9",
-        "red|small|10", "red|large|11",
-        "blue|small|100", "blue|large|104", "blue|small|96", "blue|large|100")
+        "red|small|10|light", "red|small|11|heavy", "red|large|12|light",
+        "red|large|9|heavy", "red|small|10|light", "red|large|11|heavy",
+        "blue|small|100|light", "blue|large|104|heavy",
+        "blue|small|96|light", "blue|large|100|heavy")
     Set ptr = 0
     While $ListNext(rows, ptr, row) {
         Set w = ..%New()
         Set w.Colour = $Piece(row, "|", 1)
         Set w.Size = $Piece(row, "|", 2)
         Set w.Price = $Piece(row, "|", 3)
+        Set w.Weight = $Piece(row, "|", 4)
         Set sc = w.%Save()
         If $$$ISERR(sc) { Quit }
     }
@@ -48,6 +56,9 @@ Storage Default
 </Value>
 <Value name="4">
 <Value>Price</Value>
+</Value>
+<Value name="5">
+<Value>Weight</Value>
 </Value>
 </Data>
 <DataLocation>^UnitTest.RLM.WidgetD</DataLocation>

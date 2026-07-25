@@ -129,4 +129,47 @@ Method TestTraceDistinguishesRolesAndRecordsSliceKeys()
     Do $$$AssertEquals(roles, "plan,subcall,synthesis", "one row per step, in order")
 }
 
+/// The decision detail is a sidecar, not an eleventh field.
+///
+/// A nested list packed into field eleven would make `$List(row, 11)` on a
+/// pre-feature row return "" rather than fail, which is a silent wrong answer.
+/// Subscripts also make enumerating the alternative arms a $Order walk.
+Method TestDecisionIsASidecarAndLeavesTheRowIntact()
+{
+    Set trace = ##class(RLM.Trace).%New()
+    Set d = ##class(RLM.Decision).%New("RLM.Policy.Greedy", 0.90)
+    Do d.Choose("color", 0.22, "lowest weighted child metric")
+    Set c = d.AddCandidate("color", 0.22, 2, 2)
+    Set c.ChildMetrics = $ListBuild("red:600:0.20", "blue:400:0.25")
+    Do d.AddCandidate("size", 0.86, 2, 2)
+    Set d.PeeksSpent = 4
+    Set seq = trace.AddDecision(d, 0, "UnitTest.RLM.Fixture", "")
+
+    Set row = trace.Row(seq)
+    Do $$$AssertEquals($ListLength(row), 10, "the $LIST row keeps its ten fields")
+    Do $$$AssertEquals($List(row, 1), "decision", "role names the step")
+    Do $$$AssertEquals($List(row, 5), 0.90, "splitMetric is the before-metric")
+
+    Set side = ^||RLM.Trace(trace.RunId, seq, "d")
+    Do $$$AssertEquals($List(side, 1), "color", "chosen dimension in the sidecar")
+    Do $$$AssertEquals($List(side, 5), "RLM.Policy.Greedy", "which policy decided")
+    Do $$$AssertEquals($List(side, 6), 4, "peeks spent")
+
+    Set cand = ^||RLM.Trace(trace.RunId, seq, "d", "cand", 1)
+    Do $$$AssertEquals($List(cand, 1), "color", "first candidate, declaration order")
+    Set metrics = ^||RLM.Trace(trace.RunId, seq, "d", "cand", 1, "m")
+    Do $$$AssertEquals($ListGet(metrics, 2), "blue:400:0.25", "child metrics survive")
+}
+
+/// Absence has to mean something, or a reader cannot tell a step that made no
+/// decision from a decision that failed to record.
+Method TestOrdinaryRowHasNoDecisionSubtree()
+{
+    Set trace = ##class(RLM.Trace).%New()
+    Set seq = trace.Add("subcall", 1, "color:red", "UnitTest.RLM.Fixture")
+    // Hoisted: a $$$macro(...) call cannot span source lines.
+    Set has = $Data(^||RLM.Trace(trace.RunId, seq, "d"))
+    Do $$$AssertNotTrue(has, "a sub-call made no decision")
+}
+
 }
