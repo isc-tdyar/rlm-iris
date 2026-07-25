@@ -20,3 +20,50 @@ Test suites:
 
 Pre-port reports preserved at gaia-iml/data/out-baseline/:
   analysis.md  rlm_audit.md  rlm_triage.md  rlm2_audit.md
+
+---
+
+Post-port measurement, appended at T062 (phases 1-6 complete). SC-002 asks for
+two figures: lines lost, and that every line lost was library machinery.
+
+Lines lost, 510:
+
+     513 -> 129  src/Gaia/RLM.cls        -384
+     126 ->   0  src/Gaia/Slice.cls      -126  (deleted)
+
+What went, method by method. Every entry is a row of the removal table in
+contracts/README.md, and every one is machinery -- a recursion, a budget, a
+policy, a report assembler or a second copy of the slice grammar:
+
+  RLM.cls    CallCount, Ask, BaselineSpread, ShouldRecurse, ChooseDimension,
+             Recurse, Indent, Report, the trace strings, Extends %AI.Agent
+             with PROVIDER/MODEL/APIKEY, SPLITRATIO, SPLITMINROWS
+  Slice.cls  the whole class: ChildToken, Resolve, MenuBrief, Menu
+
+What stayed is the domain knowledge, and it stayed in the project:
+
+  RLM.cls        MAXDEPTH, MAXCALLS (engine configuration ^RLMAudit prints),
+                 AUDITQUESTION and TRIAGEQUESTION (the prototype's prose
+                 verbatim), Analyze/Audit/Triage
+  Source.cls     Dimensions, Peek, Describe, SplitMetric, ShouldSplit -- the
+                 survey's six dimensions, its sixteen aggregates, its eleven
+                 description lines and its >= 400 row floor, all moved rather
+                 than deleted
+
+Three files grew, and none of the growth is machinery:
+
+     316 -> 334  src/Gaia/RLM2.cls        +18  Store(), RLM.Slice call sites,
+                                               and why the second grammar went
+      49 ->  58  src/Gaia/Tools/Survey.cls +9  Store(); the hand-written
+                                               grammar sentence went, RLM.Slice
+                                               .Menu states it from the store
+       0 -> 359  src/Gaia/Source.cls     +359  new: the survey as an RLM.Source
+
+Net across src/Gaia/, counting Source.cls and the two LLM classes as arrivals
+rather than survivors: 1221 -> 1252 lines. The 510 that left are the figure
+SC-002 asks for; the arrivals are where the domain knowledge went.
+
+Test suites after phase 6:
+
+  rlm-iris   "RLM"    148 tests, 0 failures
+  gaia-iml   "Gaia"    76 tests, 0 failures

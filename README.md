@@ -185,6 +185,34 @@ a reader cannot tell it from a correct one.
   becomes a report whose caveats name the failure, keeping whatever was already
   established. A caller that asked for a document gets a document.
 
+## A store from outside this repository
+
+[gaia-iml](https://github.com/isc-tdyar/gaia-iml) runs on the library. It is a
+Gaia DR3 photometry survey — 74,998 sources, scored in IRIS by two NGBoost
+IntegratedML models — and it had its own recursion before this library existed,
+so it is the case that says whether the seams are in the right places.
+
+What it had to write is one source class: `Gaia.Source extends RLM.Source.Table`,
+declaring **six dimensions expanding to 22 slices**, sixteen aggregates per peek,
+its own `Describe`, and a `>= 400`-row floor below which it declines to split.
+Everything else came from here.
+
+Porting **removed 510 lines** from the consumer, and every line removed was
+machinery: a recursion, a call budget, a dimension-choosing prompt, a report
+assembler, and a second copy of the slice grammar (`Gaia.Slice`, deleted
+outright — one resolver now, so a name can only be refused in one place). Nothing
+domain-specific was lost; the survey's dimensions and aggregates moved into
+`Gaia.Source` rather than being deleted, and the two analysis questions are
+verbatim what the prototype asked.
+
+The port also confirmed the accounting holds on a store the library has never
+seen: the audit report's slice counts reconcile exactly against the root —
+17,899 + 17,204 + 31,224 + 8,671 = 74,998 — spending 10 of an 18-call budget.
+
+One library defect surfaced, and only one: `RLM.Report` wrote reports through a
+stream on the local 8-bit table, so model-written em dashes and Greek letters
+became `?`. Fixed here, with a round-trip test, rather than worked around there.
+
 ## Portability
 
 Two IPM modules. `rlm-core` has no `%AI.*` dependency and talks to any

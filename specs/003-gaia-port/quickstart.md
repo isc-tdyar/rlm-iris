@@ -16,23 +16,58 @@ latency is not ours to control and `^RunScript` is the benchmarked path.
 
 ## What `Audit()` is, after the port
 
-The whole method:
+`Audit()` is one line, because both entry points share one:
 
 ```objectscript
-ClassMethod Audit(outPath As %String = "") As %Status
+ClassMethod Analyze(question, rootPath = "", outPath = "", llm = "",
+    maxCalls = {..#MAXCALLS}) As %String
 {
-    Set engine = ##class(RLM.Engine).%New(##class(Gaia.Source).%New(),
-        ##class(Gaia.LLM.AIHub).%New(), ##class(RLM.Budget).%New(18))
-    Set engine.MaxDepth = 3
+    If '$IsObject(llm) { Set llm = ##class(Gaia.LLM.AIHub).%New() }
+    Set engine = ##class(RLM.Engine).%New(##class(Gaia.Source).%New(), llm,
+        ##class(RLM.Budget).%New(maxCalls))
+    Set engine.MaxDepth = ..#MAXDEPTH
     Set engine.ReportStyle = "markdown"
-    Set text = engine.Run("Where is this survey's data quality worst, and where "
-        _"does the model's own prediction disagree with ESA's?", .traceId)
-    Quit ##class(RLM.Report).WriteTextToFile(text, outPath)
+    Set text = engine.Run(question, .traceId, rootPath)
+    If outPath '= "" { Do ##class(RLM.Report).WriteTextToFile(text, outPath) }
+    Quit text
+}
+
+ClassMethod Audit(outPath As %String = "") As %String
+{
+    Quit ..Analyze(..#AUDITQUESTION, "", outPath)
 }
 ```
 
-That replaces 513 lines. The recursion, the budget arithmetic, the trace, the
-report assembly and the file write are all the library's now.
+The question is a parameter rather than a literal so a test can assert that the
+audit and the triage ask different things without restating the prose, and `llm`
+is injectable because a run driven by `RLM.LLM.Null` is the only kind that can be
+compared byte for byte.
+
+That replaces 513 lines with 129. The recursion, the budget arithmetic, the trace,
+the report assembly and the file write are all the library's now, and `Gaia.RLM`
+no longer extends `%AI.Agent` — an entry point that is its own provider cannot be
+handed a different one.
+
+### Why it returns the text and not a `%Status`
+
+An earlier draft of this document and of `contracts/README.md` had it returning
+`%Status`, which is the more usual shape and is wrong here. `^RLMAudit` does
+`Set report = ##class(Gaia.RLM).Audit(...)` and then prints
+`$Length(report)` — a status would print as a small integer and read as a
+report of 1 character. FR-014 and T059 both say the routines are not edited, and
+the routines are the published entry points, so the method keeps their contract.
+
+`MAXDEPTH` and `MAXCALLS` stay on `Gaia.RLM` for the same reason: `^RLMAudit`
+prints both before starting, so a run announces its own ceiling. They are now
+engine _configuration_ — read once here and handed to `RLM.Engine.MaxDepth` and
+`RLM.Budget` — rather than the recursion state the prototype checked them
+against, which is the part FR-008 removes. `SPLITRATIO` and `SPLITMINROWS` do
+go: nothing outside the class read them, and the rule they expressed now lives
+in `Gaia.Source.ShouldSplit`.
+
+A failed run is still not an exception. `RLM.Engine.Run` catches its own
+failures and writes them into the report, so a bad run returns a document that
+says what went wrong, and the routine prints its length as usual.
 
 ## Cloning it
 
@@ -66,8 +101,7 @@ do ^RLMTriage
 Which is now:
 
 ```objectscript
-Set text = engine.Run("Which variable-star detections are least trustworthy?",
-    .traceId, "detection:b1")
+Quit ..Analyze(..#TRIAGEQUESTION, "detection:b1", outPath)
 ```
 
 `detection:b1` is 57,099 sources — the same population the prototype selected with
@@ -91,18 +125,28 @@ Write ##class(RLM.Slice).Menu(src)
 ```
 
 ```text
+Slices are named `dimension:child` and nest with `/` up to 3 levels. Each
+dimension may appear at most once in a name.
+
 reject_level (how heavily ESA's pipeline rejected the source's epochs (the target
 being modelled)):
-  - reject_level:b0 - clean (ESA rejected under 5% of epochs)
-  - reject_level:b1 - moderate (5-20% rejected)
-  - reject_level:b2 - heavy (20-50% rejected)
-  - reject_level:b3 - severe (over half of all epochs rejected)
-...
-detection (whether the source is a variable-star detection at all - the question
-the challenge asks):
-  - detection:b0 - not a detection (flux swing under 100%)
-  - detection:b1 - variable-star detection (flux swing over 100%)
+  reject_level:b0 - clean (ESA rejected under 5% of epochs)
+  reject_level:b1 - moderate (5-20% rejected)
+  reject_level:b2 - heavy (20-50% rejected)
+  reject_level:b3 - severe (50%+ rejected -- over half of all epochs)
+
+... epoch_count, signal_quality, model_confidence, variability ...
+
+detection (whether the source is a variable-star detection at all: the 100%
+flux-swing threshold the challenge asks about):
+  detection:b0 - not a detection (flux swing under 100%)
+  detection:b1 - variable-star detection (flux swing over 100%)
 ```
+
+The first two lines are the grammar itself, stated by the library from the store
+rather than written out anywhere in `gaia-iml`. `Gaia.Tools.Survey.ListDimensions`
+returns exactly this, which is why the prototype's hand-written version of the
+sentence was deleted rather than reworded.
 
 Tokens are ordinals, not the prototype's `severe` / `clean`. Rewording a label
 cannot invalidate a trace that named the child, which is what the ordinals are
@@ -132,10 +176,14 @@ Set ok = src.Ready(.reason)
 Two cases, because the remedies differ:
 
 ```text
-the table is empty - the ingest has not run; run 'do ^RunScript'
-only 74998 of 74998 rows are scored - the PREDICT step ran partially;
-  re-run 'do ^RunScript'
+SQLUser.GaiaQualityScored is empty -- the ingest has not run; run `do ^RunScript`
+  first
+only 31204 of 74998 rows are scored -- the PREDICT step ran partially; re-run
+  `do ^RunScript`
 ```
+
+On a loaded database `Ready()` returns 1 and `reason` is empty; the two strings
+above are what a caller sees instead of a report when it does not.
 
 The engine checks this before any model call **and before the root peek**, and
 returns the reason as the report. Averaging over whichever rows happen to be
@@ -157,7 +205,8 @@ The `"ck"` qualifier is mandatory, for the same reason it is in `rlm-iris`:
 without it the classes import without compiling and `%UnitTest` skips them while
 still printing "All PASSED".
 
-The library's own 136 tests run separately, in `rlm-iris`, and must stay green —
+76 tests, no failures. The library's own 148 run separately, in `rlm-iris`, and
+must stay green —
 a phase that breaks them found a library defect, and FR-014 says the fix goes
 there rather than into `Gaia.Source`.
 

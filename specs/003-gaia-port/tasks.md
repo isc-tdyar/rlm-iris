@@ -271,59 +271,63 @@ report, byte-identical across runs; then one real-provider `Audit()` over all
 
 ### Tests for US3 — write these first
 
-- [ ] T047 [P] [US3] Create `gaia-iml/src/UnitTest/Gaia/Port.cls`: `Audit()`
+- [x] T047 [P] [US3] Create `gaia-iml/src/UnitTest/Gaia/Port.cls`: `Audit()`
       under a scripted `RLM.LLM.Null` runs twice and the two reports are
       byte-identical (SC-003)
-- [ ] T048 [P] [US3] Add the report-completeness test under the null provider:
+- [x] T048 [P] [US3] Add the report-completeness test under the null provider:
       the report names the store, the slices examined, an answer, the limits of
       the analysis, and the calls spent
-- [ ] T049 [P] [US3] Add the `Triage()` scope test: the run is confined by the
+- [x] T049 [P] [US3] Add the `Triage()` scope test: the run is confined by the
       slice name `detection:b1`, that slice holds 57,099 rows, the report says
       which subset it describes, and no SQL string crosses into the engine
       (FR-010)
-- [ ] T050 [P] [US3] Add the budget-exhaustion test: with a budget too small to
+- [x] T050 [P] [US3] Add the budget-exhaustion test: with a budget too small to
       reach every slice, the report **names** the dropped slices rather than
       omitting them silently (principle III)
-- [ ] T051 [P] [US3] Add the empty-slice test: `detection:b1/variability:b0` is
+- [x] T051 [P] [US3] Add the empty-slice test: `detection:b1/variability:b0` is
       empty by construction; the report describes it as empty and the run spends
       no model call on it
-- [ ] T052 [P] [US3] Add the never-throws test: with the provider removed,
+- [x] T052 [P] [US3] Add the never-throws test: with the provider removed,
       `Audit()` returns a status and a report rather than raising
-- [ ] T053 [P] [US3] Add the FR-008 grep test: no call budget, recursion trace,
+- [x] T053 [P] [US3] Add the FR-008 grep test: no call budget, recursion trace,
       `Ask`, `Indent`, `Recurse` or `WriteReport` remains anywhere under
       `gaia-iml/src/Gaia/` (excluding `RLM2.cls`, whose delegation budget stays
       by FR-012)
-- [ ] T054 [US3] Run the Gaia suite and confirm the US3 tests fail for the right
+- [x] T054 [US3] Run the Gaia suite and confirm the US3 tests fail for the right
       reason
 
 ### Implementation for US3
 
-- [ ] T055 [US3] Rewrite `Gaia.RLM.Audit(outPath)` as the quickstart.md body:
+- [x] T055 [US3] Rewrite `Gaia.RLM.Audit(outPath)` as the quickstart.md body:
       construct `RLM.Engine` over `Gaia.Source` + `Gaia.LLM.AIHub` +
-      `RLM.Budget(18)`, set `MaxDepth = 3` and `ReportStyle = "markdown"`, call
-      `Run`, and return `##class(RLM.Report).WriteTextToFile(text, outPath)`
-      (FR-007)
-- [ ] T056 [US3] Rewrite `Gaia.RLM.Triage(outPath)` the same way, passing
+      `RLM.Budget(..#MAXCALLS)`, set `MaxDepth = ..#MAXDEPTH` and
+      `ReportStyle = "markdown"`, call `Run`, write with
+      `##class(RLM.Report).WriteTextToFile(text, outPath)` and return the report
+      **text** (FR-007). The return type is `%String`, not `%Status`: `^RLMAudit`
+      prints `$Length(report)` and T059 forbids editing it — see the amendment in
+      contracts/README.md
+- [x] T056 [US3] Rewrite `Gaia.RLM.Triage(outPath)` the same way, passing
       `"detection:b1"` as `Run`'s third argument
-- [ ] T057 [US3] Delete from `gaia-iml/src/Gaia/RLM.cls` every row of the
+- [x] T057 [US3] Delete from `gaia-iml/src/Gaia/RLM.cls` every row of the
       removal table in contracts/README.md: `CallCount()`, `Ask()`, `Recurse()`,
       `ChooseDimension()`, `ShouldRecurse()`, `BaselineSpread()`, `Indent()`,
-      `Report()`, the trace strings, and the `MAXDEPTH` / `MAXCALLS` /
-      `SPLITRATIO` / `SPLITMINROWS` parameters (FR-008)
-- [ ] T058 [US3] Drop `Extends %AI.Agent` from `Gaia.RLM` and its `PROVIDER` /
+      `Report()`, the trace strings, and the `SPLITRATIO` / `SPLITMINROWS`
+      parameters (FR-008). `MAXDEPTH` and `MAXCALLS` stay as engine
+      configuration — `^RLMAudit` prints both
+- [x] T058 [US3] Drop `Extends %AI.Agent` from `Gaia.RLM` and its `PROVIDER` /
       `MODEL` / `APIKEY` parameters — they moved to `Gaia.LLM.Agent`. An entry
       point that is also a provider cannot be handed a scripted provider for
       tests (research decision 2)
-- [ ] T059 [US3] Confirm `^RLMAudit` and `^RLMTriage` are unedited and still
+- [x] T059 [US3] Confirm `^RLMAudit` and `^RLMTriage` are unedited and still
       work: the signatures did not change, so the routines must not need to
-- [ ] T060 [US3] Run the Gaia suite: all US3 tests pass
-- [ ] T061 [US3] Run `Audit()` once against the real provider over all 74,998
+- [x] T060 [US3] Run the Gaia suite: all US3 tests pass
+- [x] T061 [US3] Run `Audit()` once against the real provider over all 74,998
       rows; check the figures reconcile — child counts sum to their parent, any
       gap disclosed (SC-004). Smoke gate, not a text assertion
-- [ ] T062 [US3] Recompute line counts under `gaia-iml/src/Gaia/`, diff against
+- [x] T062 [US3] Recompute line counts under `gaia-iml/src/Gaia/`, diff against
       T004, and report both figures: lines lost, and that every line lost was
       library machinery rather than domain knowledge (SC-002, ≥500)
-- [ ] T063 [US3] Run the `rlm-iris` suite. Still green. **Gate.**
+- [x] T063 [US3] Run the `rlm-iris` suite. Still green. **Gate.**
 
 **Checkpoint**: the duplication is gone and the reports still get written.
 
@@ -338,34 +342,34 @@ name it refused is still refused, and `Gaia.RLM2.Audit()` still reports.
 
 ### Tests for US4 — write these first
 
-- [ ] T064 [US4] Port the grammar tests in
+- [x] T064 [US4] Port the grammar tests in
       `gaia-iml/src/UnitTest/Gaia/RLM2.cls` to `RLM.Slice`, keeping every case:
       the whole slice enumeration accepted, and the injection attempts refused
       (SC-006). Tokens change from `reject_level:severe` to `reject_level:b3`;
       the accept/refuse verdicts must not
-- [ ] T065 [P] [US4] Add the injection test explicitly:
+- [x] T065 [P] [US4] Add the injection test explicitly:
       `reject_level:severe' OR 1=1 --` is refused as a name the store does not
       offer, no query runs, and the refusal carries the grammar
-- [ ] T066 [P] [US4] Add the nesting test: a two-component name yields a
+- [x] T066 [P] [US4] Add the nesting test: a two-component name yields a
       predicate restricting both components and a label naming both
-- [ ] T067 [P] [US4] Add the FR-011 grep test: no occurrence of `Gaia.Slice`
+- [x] T067 [P] [US4] Add the FR-011 grep test: no occurrence of `Gaia.Slice`
       anywhere under `gaia-iml/src/`
-- [ ] T068 [US4] Run the Gaia suite and confirm the US4 tests fail for the right
+- [x] T068 [US4] Run the Gaia suite and confirm the US4 tests fail for the right
       reason
 
 ### Implementation for US4
 
-- [ ] T069 [US4] Replace every `Gaia.Slice` call in
+- [x] T069 [US4] Replace every `Gaia.Slice` call in
       `gaia-iml/src/Gaia/RLM2.cls` with the `RLM.Slice` equivalent against a
       `Gaia.Source`, leaving its own delegation budget and trace in place
       (FR-012 — the model owns the recursion there, so the library has nothing
       to lend it, and RLM2 exists to be compared against the engine)
-- [ ] T070 [US4] Update `gaia-iml/src/Gaia/Tools/SliceAnalyst.cls` and
+- [x] T070 [US4] Update `gaia-iml/src/Gaia/Tools/SliceAnalyst.cls` and
       `Tools/Survey.cls` if either names `Gaia.Slice`
-- [ ] T071 [US4] Delete `gaia-iml/src/Gaia/Slice.cls`
-- [ ] T072 [US4] Run the Gaia suite: US4 tests pass and `Gaia.RLM2.Audit()`
+- [x] T071 [US4] Delete `gaia-iml/src/Gaia/Slice.cls`
+- [x] T072 [US4] Run the Gaia suite: US4 tests pass and `Gaia.RLM2.Audit()`
       still produces a report
-- [ ] T073 [US4] Run the `rlm-iris` suite. Still green. **Gate.**
+- [x] T073 [US4] Run the `rlm-iris` suite. Still green. **Gate.**
 
 **Checkpoint**: one grammar, one whitelist, one place a name can be refused.
 
@@ -376,34 +380,37 @@ name it refused is still refused, and `Gaia.RLM2.Audit()` still reports.
 **Goal**: the documentation describes the post-port design, in both
 repositories.
 
-- [ ] T074 [P] [US5] Update `gaia-iml/README.md`: name `rlm-iris` as the
+- [x] T074 [P] [US5] Update `gaia-iml/README.md`: name `rlm-iris` as the
       dependency, state what `Gaia.Source` contributes and what the library
       supplies, and give the `--recursive` clone
-- [ ] T075 [P] [US5] Rewrite `Gaia.RLM2`'s class comment: the contrast is
+- [x] T075 [P] [US5] Rewrite `Gaia.RLM2`'s class comment: the contrast is
       between the library's engine and model-driven delegation, not between two
       hand-written recursions
-- [ ] T076 [P] [US5] Update `gaia-iml/module.xml` description to match
-- [ ] T077 [P] [US5] Record in `rlm-iris/README.md` that a store outside the
+- [x] T076 [P] [US5] Update `gaia-iml/module.xml` description to match
+- [x] T077 [P] [US5] Record in `rlm-iris/README.md` that a store outside the
       library's own test suite runs on it, with the measured figures: six
       dimensions, 22 children, 74,998 rows, lines removed
-- [ ] T078 [US5] Reconcile `specs/003-gaia-port/quickstart.md` against what the
+- [x] T078 [US5] Reconcile `specs/003-gaia-port/quickstart.md` against what the
       port actually does and correct any figure that moved. Every figure in it
       is claimed as verified
-- [ ] T079 [US5] Run `markdownlint-cli2 --fix` and `prettier --write` over every
+- [x] T079 [US5] Run `markdownlint-cli2 --fix` and `prettier --write` over every
       `.md` touched in both repositories, to zero errors
 
 ---
 
 ## Phase 8: Polish & cross-cutting
 
-- [ ] T080 Update `specs/003-gaia-port/plan.md` if the port exposed a library
+- [x] T080 Update `specs/003-gaia-port/plan.md` if the port exposed a library
       defect beyond `WriteTextToFile` — the fix and its test belong in
       `rlm-iris` under FR-014, and the plan's defect list is where it is recorded
-- [ ] T081 Run the full `rlm-iris` suite and the full Gaia suite one final time;
+- [x] T081 Run the full `rlm-iris` suite and the full Gaia suite one final time;
       report both counts against T002 and T003 (SC-007)
 - [ ] T082 Walk quickstart.md end to end in a clean container to prove the
-      `--recursive` clone path works for someone who is not on this laptop
-- [ ] T083 Confirm `^RunScript`, `result.csv` and the contest timing are
+      `--recursive` clone path works for someone who is not on this laptop —
+      **BLOCKED**: `git clone --recursive` fails with
+      `upload-pack: not our ref 8b2bcf7`, because the submodule pin is a local
+      commit. Unblocks the moment `rlm-iris` is pushed; needs explicit permission
+- [x] T083 Confirm `^RunScript`, `result.csv` and the contest timing are
       untouched by this feature — diff the routine and re-run the timed path
       once
 - [ ] T084 Commit in both repositories, separately, with no AI attribution.

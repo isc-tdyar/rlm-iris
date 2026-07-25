@@ -44,7 +44,7 @@ community and is unaffected.
 **Storage**: `SQLUser.GaiaQualityScored`, 74,998 rows, 15 columns, written by
 `^RunScript`. Read-only for this feature.
 **Testing**: `%UnitTest` classes under `gaia-iml/src/UnitTest/Gaia/`, run in
-`gaia-iml-iris` with the `"ck"` load qualifier. The library's 136-test suite in
+`gaia-iml-iris` with the `"ck"` load qualifier. The library's suite in
 `rlm-iris` must stay green after every phase.
 **Target Platform**: Linux container, `gaia-iml-iris` (32796 → 1972)
 **Project Type**: ObjectScript library plus the application that consumes it,
@@ -112,6 +112,16 @@ src/UnitTest/RLM/ReportStyle.cls # EDITED — its test, and the instance method 
 ```
 
 Any further defect the port exposes lands here too, under FR-014.
+
+**Closed after phase 7: no further library defect surfaced.** `WriteTextToFile`
+is the only library change the port required. Every other failure along the way
+was in `gaia-iml` — a deleted class still compiled in the namespace, call sites
+left pointing at methods that had moved to `Gaia.Source`, a grep test matching
+its own ban list — and each was fixed in the consumer, where it belonged. Two
+library behaviours were relied on that the prototype's grammar did not have, and
+both are existing contract rather than new work: `RLM.Slice.Resolve` takes the
+store as an argument (which is what let the second copy of the grammar go), and
+it reads an empty path as the whole store rather than an error.
 
 `gaia-iml` (the port's target):
 

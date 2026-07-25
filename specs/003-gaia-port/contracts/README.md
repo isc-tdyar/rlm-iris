@@ -73,8 +73,8 @@ Obligations:
 ### `Gaia.RLM`
 
 ```objectscript
-ClassMethod Audit(outPath As %String = "") As %Status
-ClassMethod Triage(outPath As %String = "") As %Status
+ClassMethod Audit(outPath As %String = "") As %String
+ClassMethod Triage(outPath As %String = "") As %String
 ```
 
 Obligations:
@@ -85,8 +85,22 @@ Obligations:
    `RLM.Engine`, calls `Run`, and writes the result. Nothing else.
 3. `Triage` passes `"detection:b1"` as `Run`'s third argument. No SQL string
    crosses into the engine.
-4. Both return a `%Status`. A failed run is a bad status with a written report,
-   not an exception.
+4. Both return the report **text**, and write it to `outPath` as a side effect. A
+   failed run is a document saying what failed, not an exception and not a bad
+   status: `RLM.Engine.Run` catches its own failures and writes them in.
+
+Obligation 4 corrects an earlier draft of this file, which said `%Status`. That
+is the more usual shape and it contradicts obligation 1: `^RLMAudit` does
+`Set report = ##class(Gaia.RLM).Audit(...)` and prints `$Length(report)`, so a
+status would be reported as a one-character document. The routines are the
+published entry points and T059 says they are not edited, so the return type
+follows them.
+
+`Parameter MAXDEPTH` and `Parameter MAXCALLS` stay on `Gaia.RLM` for the same
+reason — `^RLMAudit` prints both before it starts. Their *meaning* changes, which
+is what FR-008 is about: they are read once, handed to `RLM.Engine.MaxDepth` and
+`RLM.Budget`, and never consulted again, where the prototype checked them on
+every recursion step. The removal table below is amended accordingly.
 
 ## What `rlm-iris` must gain
 
@@ -135,11 +149,12 @@ the store. Written down because it is the change a reader expects to find here.
 | `Indent(text)`                               | `RLM.Report.Bullet(text, depth)`                   |
 | `Report(outPath, …)`                         | `RLM.Engine.Run` plus `RLM.Report.WriteTextToFile` |
 | the trace strings                            | `RLM.Trace` and `RLM.Report.RenderTrace`           |
-| `Parameter MAXDEPTH`                         | `RLM.Engine.MaxDepth`                              |
-| `Parameter MAXCALLS`                         | `RLM.Budget`                                       |
 | `Parameter SPLITRATIO`                       | the `>= 1` in `ShouldSplit`                        |
 | `Parameter SPLITMINROWS`                     | the `>= 400` in `ShouldSplit`                      |
 | `Extends %AI.Agent`                          | `Gaia.LLM.AIHub`                                   |
+
+`MAXDEPTH` and `MAXCALLS` are *not* in this table, per the amendment above: they
+survive as the two lines of engine configuration `^RLMAudit` prints.
 
 From `Gaia/RLM2.cls`, only the `Gaia.Slice` references. Its budget, trace and
 delegation stay: it is not an `RLM.Engine` run — the model owns the recursion
