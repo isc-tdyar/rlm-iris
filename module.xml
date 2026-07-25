@@ -13,8 +13,8 @@
       <Packaging>module</Packaging>
       <SourcesRoot>src</SourcesRoot>
       <Resource Name="RLM.PKG"/>
-      <Resource Name="UnitTest.RLM.PKG"/>
       <Keywords>rlm,recursive-language-model,llm,globals,long-context,analytics,agent,objectscript</Keywords>
+      <UnitTest Name="/src/UnitTest" Package="UnitTest.RLM" Phase="test"/>
     </Module>
   </Document>
 </Export>
