@@ -161,4 +161,74 @@ Method TestRenderTraceCarriesDepth()
     Do $$$AssertNotEquals($Find(deep, "2"), 0, "and says it is at depth 2")
 }
 
+/// FR-014, and the defect the gaia port exposed. `Engine.Run` returns report text
+/// and keeps the Report object private to the run, so a caller who wants the
+/// report on disk cannot reach the instance method at all. Every consumer would
+/// re-implement it, and the first to forget the translate table gets a file whose
+/// em dashes are question marks -- indistinguishable from a wrong report.
+Method TestWriteTextToFileRoundTripsUTF8()
+{
+    Set path = "/tmp/rlm_writetext_"_$Job_".md"
+    Set text = "Store -- 74,998 sources"_$Char(10)_"sigma = 0.04"
+    Set sc = ##class(RLM.Report).WriteTextToFile(text, path)
+    Do $$$AssertStatusOK(sc, "the text is written")
+
+    Set f = ##class(%Stream.FileCharacter).%New()
+    Set f.TranslateTable = "UTF8"
+    Do f.LinkToFile(path)
+    Set got = f.Read(4000)
+    Do $$$AssertEquals(got, text, "and reads back byte for byte")
+    Do ##class(%File).Delete(path)
+}
+
+/// An em dash specifically: it is what the report's own prose uses, so a missing
+/// translate table corrupts every real report rather than an edge case.
+Method TestWriteTextToFileKeepsEmDash()
+{
+    Set path = "/tmp/rlm_writetext_dash_"_$Job_".md"
+    Set text = "the limits "_$Char(8212)_" named, not hidden"
+    Do ##class(RLM.Report).WriteTextToFile(text, path)
+
+    Set f = ##class(%Stream.FileCharacter).%New()
+    Set f.TranslateTable = "UTF8"
+    Do f.LinkToFile(path)
+    Set got = f.Read(4000)
+    Do $$$AssertEquals($Ascii(got, $Length("the limits ") + 1), 8212, "still an em dash")
+    Do ##class(%File).Delete(path)
+}
+
+/// A bad path is a status, not an exception. The gaia contract is that the report
+/// is a bonus deliverable whose absence must not disturb the timed pipeline, and a
+/// throw here would propagate out of a caller that only wanted a file.
+Method TestWriteTextToFileRefusesBadPathWithoutThrowing()
+{
+    Set threw = 0
+    Set sc = $$$OK
+    Try {
+        Set sc = ##class(RLM.Report).WriteTextToFile("x", "/nonexistent-dir-xyz/r.md")
+    } Catch e {
+        Set threw = 1
+    }
+    Do $$$AssertEquals(threw, 0, "no exception escapes")
+    Do $$$AssertStatusNotOK(sc, "and the failure comes back as a status")
+}
+
+/// The instance method keeps working, and now delegates. Asserted because the
+/// engine calls it on every run and a refactor that broke it would show up only in
+/// a file nobody reads until later.
+Method TestWriteToFileStillWritesTheReport()
+{
+    Set path = "/tmp/rlm_writefile_"_$Job_".md"
+    Set r = ##class(RLM.Report).%New()
+    Do r.Heading("Store")
+    Set sc = r.WriteToFile(path)
+    Do $$$AssertStatusOK(sc, "the instance method still writes")
+
+    Set f = ##class(%Stream.FileCharacter).%New()
+    Set f.TranslateTable = "UTF8"
+    Do f.LinkToFile(path)
+    Do $$$AssertEquals(f.Read(4000), r.Text, "the same text the report holds")
+    Do ##class(%File).Delete(path)
+}
+
 }

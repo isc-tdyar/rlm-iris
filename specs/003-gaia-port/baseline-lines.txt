@@ -1,0 +1,22 @@
+Pre-port baselines for 003-gaia-port. Measured 2026-07-25.
+Recorded before any file moved — SC-002 diffs against this, not against a
+figure recomputed after the fact.
+
+Line counts, gaia-iml (wc -l):
+
+     157 src/Gaia/Analyst.cls          UNTOUCHED by this feature
+     513 src/Gaia/RLM.cls              shrinks to ~90
+     316 src/Gaia/RLM2.cls             edited, keeps its delegation budget
+     126 src/Gaia/Slice.cls            deleted
+      60 src/Gaia/Tools/SliceAnalyst.cls   UNTOUCHED unless it names Gaia.Slice
+      49 src/Gaia/Tools/Survey.cls     UNTOUCHED
+     304 src/UnitTest/Gaia/RLM2.cls    edited, grammar tests repoint
+    1525 total
+
+Test suites:
+
+  rlm-iris   "RLM"    136 tests, All PASSED
+  gaia-iml   "Gaia"    25 tests, All PASSED  (UnitTest.Gaia.RLM2 only)
+
+Pre-port reports preserved at gaia-iml/data/out-baseline/:
+  analysis.md  rlm_audit.md  rlm_triage.md  rlm2_audit.md

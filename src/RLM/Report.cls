@@ -128,12 +128,32 @@ Method Caveats(caveats As %List) As %Status
 /// indistinguishable from a wrong one at a glance.
 Method WriteToFile(path As %String) As %Status
 {
-    Set f = ##class(%Stream.FileCharacter).%New()
-    Set f.TranslateTable = "UTF8"
-    Set sc = f.LinkToFile(path)
-    If $$$ISERR(sc) { Quit sc }
-    Do f.Write(..Text)
-    Quit f.%Save()
+    Quit ..WriteTextToFile(..Text, path)
+}
+
+/// The same write, reachable without a Report instance.
+///
+/// `Engine.Run` returns report text and keeps the Report it built private to the
+/// run, so a caller who wants the report on disk cannot reach the instance method
+/// above. Without this every consumer re-implements the write, and the first one to
+/// forget the translate table produces a file whose em dashes are question marks --
+/// which reads exactly like a wrong report. A bad path comes back as a status: the
+/// caller may be a pipeline for which a missing report is a bonus deliverable's
+/// absence, not a failure worth unwinding.
+ClassMethod WriteTextToFile(text As %String, path As %String) As %Status
+{
+    Set sc = $$$OK
+    Try {
+        Set f = ##class(%Stream.FileCharacter).%New()
+        Set f.TranslateTable = "UTF8"
+        Set sc = f.LinkToFile(path)
+        If $$$ISERR(sc) { Quit }
+        Do f.Write(text)
+        Set sc = f.%Save()
+    } Catch e {
+        Set sc = e.AsStatus()
+    }
+    Quit sc
 }
 
 }
