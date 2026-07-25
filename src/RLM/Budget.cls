@@ -16,12 +16,48 @@ Property Used As %Integer [ InitialExpression = 0 ];
 /// Calls held back for the terminal synthesis step.
 Property Reserved As %Integer [ InitialExpression = 1 ];
 
+/// Peeks this run may make, across every policy decision.
+///
+/// Peeks are accounted separately from model calls rather than charged as model
+/// calls, because they are not interchangeable: a peek is one aggregate the store
+/// answers from an index, a model call is a round trip to a provider. Charging a
+/// statistics-only policy's peeks against the model-call pool would make it cost
+/// more than the model call it exists to replace, which inverts the point of it.
+///
+/// What the two pools have in common is the rule that matters: neither can reach
+/// the slot reserved for synthesis, so no amount of exploration can leave a run
+/// unable to answer.
+Property PeekTotal As %Integer [ InitialExpression = 64 ];
+
+/// Peeks made so far.
+Property PeeksUsed As %Integer [ InitialExpression = 0 ];
+
 Method %OnNew(
 	total As %Integer = 8,
-	reserved As %Integer = 1) As %Status
+	reserved As %Integer = 1,
+	peekTotal As %Integer = 64) As %Status
 {
     Set ..Total = total
     Set ..Reserved = reserved
+    Set ..PeekTotal = peekTotal
+    Quit $$$OK
+}
+
+/// Peeks still affordable, never below zero.
+Method PeeksRemaining() As %Integer
+{
+    Quit $Select(..PeekTotal - ..PeeksUsed < 0:0, 1:..PeekTotal - ..PeeksUsed)
+}
+
+/// Charge `n` peeks. Refused as a unit, for the same reason Charge is.
+Method ChargePeek(n As %Integer = 1) As %Status
+{
+    If 'n { Quit $$$OK }
+    If ..PeeksRemaining() < n {
+        Set msg = "peek budget exhausted: "_..PeeksUsed_" of "_..PeekTotal_" used"
+        Quit $$$ERROR($$$GeneralError, msg)
+    }
+    Set ..PeeksUsed = ..PeeksUsed + n
     Quit $$$OK
 }
 
@@ -68,7 +104,9 @@ Method ChargeSynthesis() As %Status
 /// "this is all there was to find".
 Method Describe() As %String
 {
-    Quit ..Used_"/"_..Total_" model calls"
+    Set out = ..Used_"/"_..Total_" model calls"
+    If ..PeeksUsed > 0 { Set out = out_" and "_..PeeksUsed_" peeks" }
+    Quit out
 }
 
 }

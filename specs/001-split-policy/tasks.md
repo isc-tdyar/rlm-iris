@@ -21,12 +21,12 @@ Do ##class(%UnitTest.Manager).RunTest("RLM", "/noload/nodelete/norecursive")
 
 ## Phase 1: Setup
 
-- [ ] T001 Verify the `rlm-iris` container is running and the 54 existing tests
+- [x] T001 Verify the `rlm-iris` container is running and the 54 existing tests
       still pass, so any later failure is attributable to this feature
-- [ ] T002 Add a third dimension (`Weight`, which separates nothing) to
+- [x] T002 Add a third dimension (`Weight`, which separates nothing) to
       `src/UnitTest/RLM/Widget.cls` and extend `Populate()` so a greedy policy
       has a genuine loser to reject
-- [ ] T003 [P] Add a flat store to `src/UnitTest/RLM/Fixture.cls` — every
+- [x] T003 [P] Add a flat store to `src/UnitTest/RLM/Fixture.cls` — every
       dimension leaves the metric near the root — as the fixture for the
       declined-split path
 
@@ -35,21 +35,21 @@ Do ##class(%UnitTest.Manager).RunTest("RLM", "/noload/nodelete/norecursive")
 Blocking: every user story needs the decision value object and the trace
 sidecar.
 
-- [ ] T004 Write `src/UnitTest/RLM/Decision.cls` unit tests: `Reason` populated
+- [x] T004 Write `src/UnitTest/RLM/Decision.cls` unit tests: `Reason` populated
       on success as well as decline, `Candidates` preserves declaration order,
       `AddCandidate()` returns the candidate it appended, a decline has an empty
       `Dimension` with a non-empty `Reason`
-- [ ] T005 Implement `src/RLM/Decision.cls` and `src/RLM/Decision/Candidate.cls`
+- [x] T005 Implement `src/RLM/Decision.cls` and `src/RLM/Decision/Candidate.cls`
       per data-model.md (Dimension, Reason, MetricBefore, MetricAfter,
       PolicyClass, PeeksSpent, Capped, Candidates; candidate carries Dimension,
       Score, ChildMetrics, Children, Sampled, Error)
-- [ ] T006 Extend `src/UnitTest/RLM/Engine.cls` with a trace-sidecar test:
+- [x] T006 Extend `src/UnitTest/RLM/Engine.cls` with a trace-sidecar test:
       writing a decision leaves the ten-field `$LIST` row untouched and puts the
       detail under `("d")` and `("d","cand",n)`
-- [ ] T007 Add `AddDecision(decision, depth, sourceClass, sliceKey)` to
+- [x] T007 Add `AddDecision(decision, depth, sourceClass, sliceKey)` to
       `src/RLM/Trace.cls`, writing a `decision` row plus the `"d"` subtree; do
       not change any existing field position
-- [ ] T008 Run the full suite — existing 54 tests plus the new ones — and
+- [x] T008 Run the full suite — existing 54 tests plus the new ones — and
       confirm the current ordering assertions in `UnitTest.RLM.EndToEnd` still
       hold, because that is the proof the change is additive
 
@@ -64,41 +64,41 @@ model calls are one fewer than the same run under the LLM policy.
 
 ### Tests first (US1)
 
-- [ ] T009 [P] [US1] Write `src/UnitTest/RLM/Policy.cls`:
+- [x] T009 [P] [US1] Write `src/UnitTest/RLM/Policy.cls`:
       `TestChoosesTheSeparatingDimension` (Colour over Size over Weight on the
       `Widget` store), `TestDeclinesWhenNothingSeparates` (flat fixture →
       empty `Dimension`, non-empty `Reason`),
       `TestTiesBreakByDeclarationOrder`,
       `TestIdenticalInvocationsReturnIdenticalDecisions`
-- [ ] T010 [P] [US1] Add budget tests to `src/UnitTest/RLM/Policy.cls`:
+- [x] T010 [P] [US1] Add budget tests to `src/UnitTest/RLM/Policy.cls`:
       `TestChargesEveryPeek`, `TestNeverTouchesTheReservedSlot`,
       `TestStopsWhenBudgetRefuses` (decision returned, `Capped` set)
-- [ ] T011 [P] [US1] Add cap tests to `src/UnitTest/RLM/Policy.cls`:
+- [x] T011 [P] [US1] Add cap tests to `src/UnitTest/RLM/Policy.cls`:
       `TestMaxChildrenSampledIsReported` (`Sampled < Children`),
       `TestMaxPeeksPerDecisionIsReported` (`Capped` set), using a
       high-fanout dimension
-- [ ] T012 [US1] Add `TestGreedyRunSpendsNoPlanCall` to
+- [x] T012 [US1] Add `TestGreedyRunSpendsNoPlanCall` to
       `src/UnitTest/RLM/EndToEnd.cls` — the US1 phase gate
 
 ### Implementation (US1)
 
-- [ ] T013 [US1] Implement abstract `src/RLM/Policy.cls` with
+- [x] T013 [US1] Implement abstract `src/RLM/Policy.cls` with
       `ChooseSplit(source, peek, candidates, budget) As RLM.Decision` per
       contracts/policy.md, plus `MaxPeeksPerDecision` (12) and
       `MaxChildrenSampled` (8) parameters
-- [ ] T014 [US1] Implement `src/RLM/Policy/Greedy.cls`: per candidate, peek up
+- [x] T014 [US1] Implement `src/RLM/Policy/Greedy.cls`: per candidate, peek up
       to `MaxChildrenSampled` children in declaration order, score by
       size-weighted mean of child metrics (research §1), record raw child
       metrics, charge every peek, set `Capped`/`Sampled` when a bound bites,
       decline when no candidate beats `MetricBefore`
-- [ ] T015 [US1] Add `Policy` property and candidate-eligibility computation
+- [x] T015 [US1] Add `Policy` property and candidate-eligibility computation
       (declared / not on path / ≥2 children) to `src/RLM/Engine.cls`; delegate
       the split choice and act on the returned dimension by resolving one slice
       per child
-- [ ] T016 [US1] Add the declined-split caveat to `src/RLM/Report.cls` so
+- [x] T016 [US1] Add the declined-split caveat to `src/RLM/Report.cls` so
       "not decomposed because nothing separated it" reaches the reader
       (FR-002, Constitution III)
-- [ ] T017 [US1] **Phase gate**: run the whole suite; T012 and every pre-existing
+- [x] T017 [US1] **Phase gate**: run the whole suite; T012 and every pre-existing
       test must pass before Phase 4
 
 ## Phase 4: User Story 2 — Model-driven choice, behind the seam (P2)

@@ -28,15 +28,18 @@ Method OnBeforeOneTest(testname As %String) As %Status
 
 Method TestDecomposesARealTable()
 {
+    // The model now names a dimension rather than a list of slices; the engine
+    // expands it into one slice per child, so every name it resolves is one the
+    // store itself generated.
     Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "colour:red"_$Char(10)_"colour:blue",
+        "colour",
         "The six red widgets sit between 9 and 12.",
         "The four blue widgets sit between 96 and 104.",
         "Colour separates price: red 9-12, blue 96-104."))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Set report = engine.Run("what drives price?", .traceId)
 
-    Do $$$AssertEquals(llm.Calls, 4, "plan + 2 sub-calls + synthesis")
+    Do $$$AssertEquals(llm.Calls, 4, "decision + 2 sub-calls + synthesis")
 
     // Figures the model was given must be the database's, not the fixture's.
     Do $$$AssertNotEquals($Find(report, "n=10"), 0, "store-wide count is real")
@@ -50,14 +53,22 @@ Method TestDecomposesARealTable()
 Method TestNoRowEverReachesTheModel()
 {
     Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "colour:red", "red note", "answer"))
+        "colour", "red note", "blue note", "answer"))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Do engine.Run("what drives price?", .traceId)
 
     // 104 is a Price value held by exactly one row and is not any aggregate of
     // the red slice, so finding it in the red sub-call prompt would mean row
     // data crossed the boundary.
-    Set redPrompt = llm.PromptAt(2)
+    //
+    // The prompt is located by content rather than by ordinal: the store's child
+    // order comes from SELECT DISTINCT and is the database's business, so a test
+    // that hard-codes which call was red asserts on collation order by accident.
+    Set redPrompt = ""
+    For i = 1:1:llm.Calls {
+        If $Find(llm.PromptAt(i), "n=6") { Set redPrompt = llm.PromptAt(i)  Quit }
+    }
+    Do $$$AssertNotEquals(redPrompt, "", "the red slice was asked about")
     Set leak = $Find(redPrompt, "104")
     Do $$$AssertEquals(leak, 0, "no individual price reaches the sub-call")
     Do $$$AssertNotEquals($Find(redPrompt, "n=6"), 0, "only the aggregate does")
@@ -78,7 +89,7 @@ Method TestPromptSizeIsIndependentOfRowCount()
 
 Method PlanPromptLength() As %Integer
 {
-    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("", "answer"))
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("none", "answer"))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Do engine.Run("q", .t)
     // The store-wide count is the one figure that legitimately changes with row
@@ -108,22 +119,76 @@ Method Duplicate() As %Status
 /// the trace and not the report.
 Method TestTraceAccountsForEveryCall()
 {
-    Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "colour:red"_$Char(10)_"shape:round"_$Char(10)_"colour:blue",
-        "red", "blue", "answer"))
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("colour", "red", "blue", "answer"))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Do engine.Run("q", .traceId)
 
-    Set roles = ""
-    Set seq = ""
+    Set roles = ..Roles(traceId)
+    // A `decision` row now stands where `plan` did. There is no `refused` row
+    // because the engine generates the slice names from the store's own children,
+    // so a name the store will refuse can no longer be produced -- the failure
+    // mode the old assertion guarded is gone rather than untested.
+    Do $$$AssertEquals(roles, "decision,subcall,subcall,synthesis", "every step recorded")
+}
+
+/// US1 phase gate. The claim of the feature, measured: the same store decomposed
+/// with no model call spent on navigation.
+Method TestGreedyRunSpendsNoModelCallOnNavigation()
+{
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("red", "blue", "answer"))
+    Set budget = ##class(RLM.Budget).%New(8)
+    Set engine = ##class(RLM.Engine).%New(..Source, llm, budget,
+        ##class(RLM.Policy.Greedy).%New())
+    Set report = engine.Run("what drives price?", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 3, "2 sub-calls + synthesis, and nothing else")
+    Set roles = ..Roles(traceId)
+    Do $$$AssertEquals(roles, "decision,subcall,subcall,synthesis", "decision recorded")
+    Do $$$AssertTrue(budget.PeeksUsed > 0, "it paid in peeks instead")
+    Do $$$AssertNotEquals($Find(report, "n=6"), 0, "and reached the same slices")
+    Do $$$AssertNotEquals($Find(report, "n=4"), 0, "both of them")
+}
+
+/// SC-001, stated as a comparison rather than an absolute: the same store, the
+/// same slices, one fewer model call.
+Method TestGreedyCostsOneFewerModelCallThanTheModelPolicy()
+{
+    Set a = ##class(RLM.LLM.Null).%New($ListBuild("colour", "red", "blue", "answer"))
+    Set ea = ##class(RLM.Engine).%New(..Source, a)
+    Do ea.Run("what drives price?", .ta)
+
+    Set b = ##class(RLM.LLM.Null).%New($ListBuild("red", "blue", "answer"))
+    Set eb = ##class(RLM.Engine).%New(..Source, b, , ##class(RLM.Policy.Greedy).%New())
+    Do eb.Run("what drives price?", .tb)
+
+    Do $$$AssertEquals(b.Calls, a.Calls - 1, "one fewer model call for the same work")
+}
+
+/// A store nothing separates must produce an answer that says so, not a
+/// decomposition that quietly examined nothing.
+Method TestUndecomposableStoreSaysSoInTheReport()
+{
+    Set flat = ##class(UnitTest.RLM.FixtureFlat).%New()
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("nothing separates this store"))
+    Set engine = ##class(RLM.Engine).%New(flat, llm, ,
+        ##class(RLM.Policy.Greedy).%New())
+    Set report = engine.Run("q", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 1, "synthesis only")
+    Do $$$AssertNotEquals($Find(report, "Not decomposed"), 0, "the reader is told")
+    Set why = $Find(report, "no dimension reduced the metric")
+    Do $$$AssertNotEquals(why, 0, "and told why")
+}
+
+Method Roles(traceId As %Integer) As %String
+{
+    Set roles = "", seq = ""
     For  {
         Set seq = $Order(^||RLM.Trace(traceId, seq), 1, row)
         Quit:seq=""
         Set roles = roles_$Select(roles="":"", 1:",")_$List(row, 1)
     }
-    // The refused slice is on the record even though it cost no model call: a
-    // slice the reader believes was examined but was not is the failure mode.
-    Do $$$AssertEquals(roles, "plan,subcall,refused,subcall,synthesis", "every step recorded")
+    Quit roles
 }
 
 }

@@ -19,18 +19,19 @@ Method OnBeforeOneTest(testname As %String) As %Status
     Quit $$$OK
 }
 
-/// A plan naming two slices costs: 1 plan + 2 sub-calls + 1 synthesis.
+/// Naming a dimension with two children costs: 1 decision + 2 sub-calls +
+/// 1 synthesis. The model names the dimension; the engine expands it.
 Method TestRunsPlanSubcallsThenSynthesis()
 {
     Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "color:red"_$Char(10)_"color:blue",
+        "color",
         "red is tight",
         "blue is tight",
         "colour separates the population"))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Set report = engine.Run("what separates this store?", .trace)
 
-    Do $$$AssertEquals(llm.Calls, 4, "1 plan + 2 sub-calls + 1 synthesis")
+    Do $$$AssertEquals(llm.Calls, 4, "1 decision + 2 sub-calls + 1 synthesis")
     Set found = $Find(report, "colour separates the population")
     Do $$$AssertNotEquals(found, 0, "the synthesis text is the answer")
 }
@@ -45,40 +46,43 @@ Method TestRootPromptCarriesOnlyAggregates()
 
     Set plan = llm.PromptAt(1)
     Do $$$AssertNotEquals($Find(plan, "n=1000"), 0, "root count is present")
-    Do $$$AssertNotEquals($Find(plan, "color:red"), 0, "the menu is present")
+    // The choice offered is now a list of dimensions rather than of slice paths,
+    // so the name to look for is the dimension's.
+    Do $$$AssertNotEquals($Find(plan, "color"), 0, "the candidate list is present")
     Set leak = $Find(plan, "<row")
     Do $$$AssertEquals(leak, 0, "no fixture rows leak into the prompt")
 }
 
-/// A model that names a slice the store does not offer must be refused, and the
-/// refusal must be visible in the report rather than silently dropped: an
-/// omitted slice the reader believes was inspected is the worst failure mode.
-Method TestRefusedSliceIsReportedNotExecuted()
+/// The successor to TestRefusedSliceIsReportedNotExecuted.
+///
+/// A refused *slice* can no longer occur: the engine generates slice names from
+/// the store's own children, so every name it resolves resolves by construction.
+/// What can still go wrong is the model naming a dimension the store does not
+/// offer, and that must decline the split visibly rather than proceed as though
+/// a decomposition happened.
+Method TestInventedDimensionDeclinesTheSplitAndSaysSo()
 {
-    Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "shape:round"_$Char(10)_"color:red",
-        "red note",
-        "synthesis"))
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("shape", "synthesis"))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Set report = engine.Run("q", .trace)
 
-    Do $$$AssertEquals(llm.Calls, 3, "the refused slice costs no sub-call")
-    Set found = $Find(report, "refused")
-    Do $$$AssertNotEquals(found, 0, "the refusal is on the record")
+    Do $$$AssertEquals(llm.Calls, 2, "the invented dimension costs no sub-call")
+    Set found = $Find(report, "Not decomposed")
+    Do $$$AssertNotEquals(found, 0, "the decline is on the record")
+    Set named = $Find(report, "shape")
+    Do $$$AssertNotEquals(named, 0, "quoting what the model actually said")
 }
 
-/// The model asks for more slices than the budget can fund. It must be truncated
-/// at the budget, and the truncation must be stated.
+/// The chosen dimension has more children than the budget can fund. The run must
+/// be truncated at the budget, and the truncation stated.
 Method TestBudgetCapsSubcallsAndSaysSo()
 {
-    Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "color:red"_$Char(10)_"color:blue"_$Char(10)_"size:small"_$Char(10)_"size:large",
-        "one", "two", "synthesis"))
-    // 4 total: plan + 2 sub-calls + reserved synthesis.
-    Set engine = ##class(RLM.Engine).%New(..Source, llm, ##class(RLM.Budget).%New(4))
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("color", "one", "synthesis"))
+    // 3 total: decision + 1 sub-call + reserved synthesis, against 2 children.
+    Set engine = ##class(RLM.Engine).%New(..Source, llm, ##class(RLM.Budget).%New(3))
     Set report = engine.Run("q", .trace)
 
-    Do $$$AssertEquals(llm.Calls, 4, "budget honoured exactly")
+    Do $$$AssertEquals(llm.Calls, 3, "budget honoured exactly")
     Set found = $Find(report, "budget")
     Do $$$AssertNotEquals(found, 0, "the cap is disclosed")
 }
@@ -99,10 +103,11 @@ Method TestEmptyPlanStillSynthesizes()
 Method TestSubcallFailureDoesNotAbortTheRun()
 {
     Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
-        "color:red"_$Char(10)_"color:blue",
+        "color",
         "red note",
         "blue note",
         "synthesis anyway"))
+    // Call 1 is the decision, so call 2 is the first sub-call.
     Set llm.FailAtCall = 2
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Set report = engine.Run("q", .trace)
@@ -115,18 +120,26 @@ Method TestSubcallFailureDoesNotAbortTheRun()
 /// the defect that made an earlier prototype's 6-slice plan read as 8 calls.
 Method TestTraceDistinguishesRolesAndRecordsSliceKeys()
 {
-    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("color:red", "note", "synthesis"))
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("color", "red", "blue", "synth"))
     Set engine = ##class(RLM.Engine).%New(..Source, llm)
     Do engine.Run("q", .trace)
 
-    Set roles = ""
+    Set roles = "", keys = ""
     Set seq = ""
     For  {
         Set seq = $Order(^||RLM.Trace(trace, seq), 1, row)
         Quit:seq=""
         Set roles = roles_$Select(roles="":"", 1:",")_$List(row, 1)
+        // Field 3 is the source class and field 4 the slice key; the row is not
+        // built in the order Add() takes its arguments.
+        If $List(row, 1) = "subcall" {
+            Set keys = keys_$Select(keys="":"", 1:",")_$List(row, 4)
+        }
     }
-    Do $$$AssertEquals(roles, "plan,subcall,synthesis", "one row per step, in order")
+    // `decision` stands where `plan` did: the step is recorded whether or not a
+    // model call paid for it, which is what lets the two policies be compared.
+    Do $$$AssertEquals(roles, "decision,subcall,subcall,synthesis", "one row per step")
+    Do $$$AssertEquals(keys, "color:red,color:blue", "each sub-call says which slice")
 }
 
 /// The decision detail is a sidecar, not an eleventh field.

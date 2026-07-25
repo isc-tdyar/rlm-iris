@@ -24,17 +24,27 @@ Property LLM As RLM.LLM;
 
 Property Budget As RLM.Budget;
 
+/// How the split is chosen. Defaults to RLM.Policy.LLM, which is the behaviour
+/// the engine had before policies existed, so existing callers are unaffected.
+Property Policy As RLM.Policy;
+
 /// Write the trace to ^RLM.Trace rather than the process-private global.
 Property DurableTrace As %Boolean [ InitialExpression = 0 ];
 
 Method %OnNew(
 	source As RLM.Source,
 	llm As RLM.LLM,
-	budget As RLM.Budget = "") As %Status
+	budget As RLM.Budget = "",
+	policy As RLM.Policy = "") As %Status
 {
     Set ..Source = source
     Set ..LLM = llm
     Set ..Budget = $Select($IsObject(budget):budget, 1:##class(RLM.Budget).%New())
+    If $IsObject(policy) {
+        Set ..Policy = policy
+    } Else {
+        Set ..Policy = ##class(RLM.Policy.LLM).%New(llm)
+    }
     Quit $$$OK
 }
 
@@ -64,13 +74,23 @@ Method Run(
     Do report.Heading("Store")
     Do report.Add(rootDesc)
 
-    // --- plan ---
-    Set plan = ..Ask("plan", ..PlanInstructions(), ..PlanPrompt(question, rootDesc),
-        trace, 0, "", .sc)
-    If $$$ISERR(sc) {
-        Set caveats = caveats_$ListBuild("Planning failed ("_$System.Status.GetErrorText(sc)_"); the store was not decomposed.")
-        Set plan = ""
+    // --- how to divide it ---
+    // The engine decides which dimensions are *eligible*; the policy decides
+    // which of them to use. Eligibility is computed here rather than in the
+    // policy because a policy deriving its own candidate set could derive a
+    // different one, and then two policies over the same store are not
+    // comparable -- which is the whole reason the seam exists.
+    Set candidates = ..Candidates("")
+    Set decision = ..Policy.ChooseSplit(..Source, rootPeek, candidates, ..Budget)
+    Do trace.AddDecision(decision, 0, $ClassName(..Source), "")
+    If decision.Capped {
+        Set caveats = caveats_$ListBuild("The split decision was limited by a cap, so it rests on partial evidence.")
     }
+    If 'decision.Chose() {
+        Set caveats = caveats_$ListBuild("Not decomposed: "_decision.Reason_".")
+    }
+
+    Set plan = ..Expand(decision)
 
     // --- sub-calls ---
     Set notes = "", asked = 0, refused = 0, wanted = 0
@@ -142,6 +162,53 @@ Method Run(
     Do report.Caveats(caveats)
 
     Quit report.Text
+}
+
+/// Dimensions eligible for splitting the slice at `path`.
+///
+/// A dimension qualifies when the store declares it, it is not already used on
+/// this path (splitting twice on one dimension narrows nothing), and it has at
+/// least two children (FR-011: one child yields a slice identical to its parent).
+Method Candidates(path As %String = "") As %List
+{
+    Set out = ""
+    Set dims = ..Source.Dimensions()
+    If '$IsObject(dims) { Quit "" }
+
+    Set used = ""
+    For i = 1:1:$Length(path, "/") {
+        Set comp = $Piece(path, "/", i)
+        Continue:comp=""
+        Set used = used_$ListBuild($Piece(comp, ":", 1))
+    }
+
+    Set it = dims.%GetIterator()
+    While it.%GetNext(.dim, .spec) {
+        Continue:$ListFind(used, dim)
+        Continue:'$IsObject(spec)
+        Continue:'$IsObject(spec.children)
+        Continue:spec.children.%Size()<2
+        Set out = out_$ListBuild(dim)
+    }
+    Quit out
+}
+
+/// Turn a chosen dimension into one slice name per child.
+///
+/// This is the step the model used to perform by naming slices, and moving it
+/// here is what separates "how should this be divided" from "which pieces are
+/// worth looking at". The names are generated from the store's own children, so
+/// every one of them resolves by construction.
+Method Expand(decision As RLM.Decision) As %String
+{
+    If 'decision.Chose() { Quit "" }
+    Set kids = ##class(RLM.Policy).Children(..Source, decision.Dimension, .sc)
+    If $$$ISERR(sc) { Quit "" }
+    Set out = "", ptr = 0
+    While $ListNext(kids, ptr, token) {
+        Set out = out_$Select(out="":"", 1:$Char(10))_decision.Dimension_":"_token
+    }
+    Quit out
 }
 
 /// One model call, charged and traced. Returns "" on failure with `sc` set --
