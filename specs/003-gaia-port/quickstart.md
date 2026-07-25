@@ -89,8 +89,17 @@ do $System.OBJ.LoadDir("/home/irisowner/dev/src","ck",,1)
 ```
 
 IPM is not the route: `%ZPM.PackageManager` does not exist in the 2026.3 AI
-preview image the prototype builds on. `module.xml` still declares the dependency
-for anyone installing on an image that has it.
+preview image the prototype builds on.
+
+`module.xml` does not name `rlm-core` as a dependency either, which an earlier
+draft of this document said it did. `rlm-core` is not published to any registry,
+so an IPM install fails on `Could not find satisfactory version of rlm-core`
+before compiling a line — and a `<Dependencies>` entry only helps someone who can
+already resolve the name. `gaia-iml` gates instead: `Gaia.Install` runs at
+activation, and where the library and AI Hub are absent it skips the analysis
+layer, names what was missing, and leaves `^RunScript` installed. A consumer of
+this library is not obliged to make the library installable everywhere the
+consumer is.
 
 ## Asking about the detections only
 
