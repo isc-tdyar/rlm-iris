@@ -230,30 +230,30 @@ configuration returns `""` with a bad status and no exception.
 
 ### Tests for US2 — write these first
 
-- [ ] T039 [P] [US2] Create `gaia-iml/src/UnitTest/Gaia/LLM.cls`: `Complete()`
+- [x] T039 [P] [US2] Create `gaia-iml/src/UnitTest/Gaia/LLM.cls`: `Complete()`
       with a live key returns non-empty text with an OK status and `..Model`
       names the model that answered
-- [ ] T040 [P] [US2] Add the failure tests: no API key, an unreachable provider,
+- [x] T040 [P] [US2] Add the failure tests: no API key, an unreachable provider,
       and an empty prompt each return `""` with a status naming the failure and
       **never** throw. The report is a bonus deliverable; its absence must not
       disturb `result.csv`
-- [ ] T041 [P] [US2] Add the SC-005 test: search
+- [x] T041 [P] [US2] Add the SC-005 test: search
       `lib/rlm-core/src/RLM/Engine.cls` for `%AI.` and require zero matches.
       Search, not inspection
-- [ ] T042 [US2] Run the Gaia suite and confirm the US2 tests fail for the right
+- [x] T042 [US2] Run the Gaia suite and confirm the US2 tests fail for the right
       reason
 
 ### Implementation for US2
 
-- [ ] T043 [US2] Create `gaia-iml/src/Gaia/LLM/Agent.cls` extending
+- [x] T043 [US2] Create `gaia-iml/src/Gaia/LLM/Agent.cls` extending
       `%AI.Agent`, carrying the prototype's `PROVIDER` (openai), `MODEL`
       (gpt-4o-mini) and `APIKEY` (`@{env.OPENAI_API_KEY}`) parameters
-- [ ] T044 [US2] Create `gaia-iml/src/Gaia/LLM/AIHub.cls` extending `RLM.LLM`:
+- [x] T044 [US2] Create `gaia-iml/src/Gaia/LLM/AIHub.cls` extending `RLM.LLM`:
       `Complete(instructions, prompt, .sc)` does `%Init` / `CreateSession` /
       `Chat` inside `Try`/`Catch`, one round trip, no tool loop, sets `..Model`,
       returns `""` with `sc` on any failure (FR-009)
-- [ ] T045 [US2] Run the Gaia suite: US2 tests pass
-- [ ] T046 [US2] Run the `rlm-iris` suite. Still green. **Gate.**
+- [x] T045 [US2] Run the Gaia suite: US2 tests pass
+- [x] T046 [US2] Run the `rlm-iris` suite. Still green. **Gate.**
 
 **Checkpoint**: the engine drives an AI Hub provider with no edit to the engine.
 Principle VI is exercised rather than asserted.
