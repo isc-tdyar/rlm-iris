@@ -59,8 +59,8 @@ Portable is the default, not the fallback — see [SPEC §3.1](docs/SPEC.md).
 
 ## Milestones
 
-- [ ] **M0** Engine + `RLM.LLM.REST` + `Table` source
-- [ ] **M1** `RLM.Trace` + `RLM.Policy` contract + `Greedy` baseline
+- [x] **M0** Engine + `RLM.LLM.REST` + `Table` source
+- [ ] **M1** `RLM.Policy` contract + `Greedy` baseline
 - [ ] **M2** `Global` source (bounded walk, reported caps, allowlist)
 - [ ] **M3** Replay + offline evaluation + `RLM.LLM.Null` CI
 - [ ] **M4** `Interop` and `Audit` sources
