@@ -11,25 +11,29 @@
 Class UnitTest.RLM.Fixture Extends RLM.Source
 {
 
-/// Statistics keyed by the canonical slice key. `metric` is the normalized
-/// 0-1 split metric; `color` separates the population and `size` does not.
-XData Stats
+/// Statistics keyed by the canonical slice key, as `key|n|metric` rows.
+/// `metric` is the normalized 0-1 split metric: `color` separates the
+/// population and `size` does not, so a policy that picks the better dimension
+/// is distinguishable from one that picks the first.
+///
+/// A literal list rather than XData or a table, because a fixture that can
+/// itself fail to load turns every downstream failure into a puzzle.
+ClassMethod Stats() As %List
 {
-<stats>
-<row key="" n="1000" metric="0.90"/>
-<row key="color:red" n="600" metric="0.20"/>
-<row key="color:blue" n="400" metric="0.25"/>
-<row key="size:small" n="500" metric="0.85"/>
-<row key="size:large" n="500" metric="0.88"/>
-<row key="color:red/size:small" n="300" metric="0.05"/>
-<row key="color:red/size:large" n="300" metric="0.06"/>
-<row key="color:blue/size:small" n="200" metric="0.07"/>
-<row key="color:blue/size:large" n="200" metric="0.08"/>
-<row key="size:small/color:red" n="300" metric="0.05"/>
-<row key="size:small/color:blue" n="200" metric="0.07"/>
-<row key="size:large/color:red" n="300" metric="0.06"/>
-<row key="size:large/color:blue" n="200" metric="0.08"/>
-</stats>
+    Quit $ListBuild(
+        "|1000|0.90",
+        "color:red|600|0.20",
+        "color:blue|400|0.25",
+        "size:small|500|0.85",
+        "size:large|500|0.88",
+        "color:red/size:small|300|0.05",
+        "color:red/size:large|300|0.06",
+        "color:blue/size:small|200|0.07",
+        "color:blue/size:large|200|0.08",
+        "size:small/color:red|300|0.05",
+        "size:small/color:blue|200|0.07",
+        "size:large/color:red|300|0.06",
+        "size:large/color:blue|200|0.08")
 }
 
 Method %OnNew(name As %String = "fixture") As %Status
@@ -71,24 +75,15 @@ Method Predicate(components As %List) As %String
 
 Method Peek(predicate As %String = "") As %DynamicObject
 {
-    Set xdata = ##class(%Dictionary.CompiledXData).%OpenId($ClassName()_"||Stats")
-    If '$IsObject(xdata) { Quit {"error": "fixture Stats XData missing"} }
-    Set reader = ##class(%XML.TextReader).%New()
-    Do ##class(%XML.TextReader).ParseStream(xdata.Data, .reader)
-    While reader.Read() {
-        Continue:reader.NodeType'="element"
-        Continue:reader.Name'="row"
-        Do reader.MoveToAttributeName("key")
-        Set key = reader.Value
-        Continue:key'=predicate
-        Do reader.MoveToAttributeName("n")
-        Set n = reader.Value
-        Do reader.MoveToAttributeName("metric")
-        Set metric = reader.Value
+    Set ptr = 0
+    While $ListNext(..Stats(), ptr, row) {
+        Continue:$Piece(row, "|", 1)'=predicate
         Quit
     }
-    If '$Data(n) { Quit {"error": ("no fixture row for key '"_predicate_"'")} }
-    Quit {"n": (n), "metric": (metric), "capped": 0}
+    If $Piece($Get(row), "|", 1) '= predicate {
+        Quit {"error": ("no fixture row for key '"_predicate_"'")}
+    }
+    Quit {"n": ($Piece(row, "|", 2)), "metric": ($Piece(row, "|", 3)), "capped": 0}
 }
 
 Method Describe(label As %String, peek As %DynamicObject) As %String
