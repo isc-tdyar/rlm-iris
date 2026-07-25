@@ -405,15 +405,16 @@ repositories.
       `rlm-iris` under FR-014, and the plan's defect list is where it is recorded
 - [x] T081 Run the full `rlm-iris` suite and the full Gaia suite one final time;
       report both counts against T002 and T003 (SC-007)
-- [ ] T082 Walk quickstart.md end to end in a clean container to prove the
-      `--recursive` clone path works for someone who is not on this laptop —
-      **BLOCKED**: `git clone --recursive` fails with
-      `upload-pack: not our ref 8b2bcf7`, because the submodule pin is a local
-      commit. Unblocks the moment `rlm-iris` is pushed; needs explicit permission
+- [x] T082 Walk quickstart.md end to end in a clean container to prove the
+      `--recursive` clone path works for someone who is not on this laptop.
+      Blocked until `rlm-iris` was pushed (`upload-pack: not our ref 8b2bcf7` —
+      the submodule pin was a local commit). After the push: a fresh
+      `git clone --recursive` resolves the pin, and both `LoadDir` calls from
+      quickstart compile it with no error, `Gaia.Source.Ready()` returning 1
 - [x] T083 Confirm `^RunScript`, `result.csv` and the contest timing are
       untouched by this feature — diff the routine and re-run the timed path
       once
-- [ ] T084 Commit in both repositories, separately, with no AI attribution.
+- [x] T084 Commit in both repositories, separately, with no AI attribution.
       Nothing is pushed without explicit instruction
 
 ---
