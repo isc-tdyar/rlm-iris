@@ -167,13 +167,13 @@ identifiable and re-peekable.
 
 ## Phase 6: Polish
 
-- [ ] T028 [P] Verify quickstart.md's snippets run verbatim in the container;
+- [x] T028 [P] Verify quickstart.md's snippets run verbatim in the container;
       fix the doc, not the test, if they drift
-- [ ] T029 [P] Update `README.md` with the policy seam and the greedy-vs-LLM
+- [x] T029 [P] Update `README.md` with the policy seam and the greedy-vs-LLM
       cost difference
-- [ ] T030 Confirm SC-001 by measuring: same store, both policies, compare
+- [x] T030 Confirm SC-001 by measuring: same store, both policies, compare
       `RLM.Budget.Used`; record the numbers in the PR description
-- [ ] T031 Run `markdownlint-cli2 --fix` and `prettier --write` over every `.md`
+- [x] T031 Run `markdownlint-cli2 --fix` and `prettier --write` over every `.md`
       touched
 
 ## Dependencies
