@@ -168,6 +168,25 @@ ClassMethod Decisions(
     Quit out
 }
 
+/// How many rows a finished run wrote.
+///
+/// A class method over a run id, like Decisions and RLM.Report.RenderTrace: the
+/// caller that wants to know whether a rendering dropped a row has the id and the
+/// global, not the engine that made them.
+ClassMethod RowCount(
+	runId As %Integer,
+	durable As %Boolean = 0) As %Integer
+{
+    Set n = 0, seq = ""
+    For  {
+        If durable { Set seq = $Order(^RLM.Trace(runId, seq)) }
+        Else { Set seq = $Order(^||RLM.Trace(runId, seq)) }
+        Quit:seq=""
+        Set n = n + 1
+    }
+    Quit n
+}
+
 /// Read one row back, for assertions and for replay.
 Method Row(seq As %Integer) As %List
 {

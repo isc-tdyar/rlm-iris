@@ -13,13 +13,13 @@ Class UnitTest.RLM.EndToEnd Extends %UnitTest.TestCase
 
 Property Source As RLM.Source;
 
-Method OnBeforeAllTests() As %Status
-{
-    Quit ##class(UnitTest.RLM.Widget).Populate()
-}
-
+/// Repopulated per test rather than once per suite: two tests here grow the table
+/// deliberately, and a test that inherits the previous one's rows fails for a
+/// reason that has nothing to do with what it asserts.
 Method OnBeforeOneTest(testname As %String) As %Status
 {
+    Set sc = ##class(UnitTest.RLM.Widget).Populate()
+    If $$$ISERR(sc) { Quit sc }
     Set ..Source = ##class(RLM.Source.Table).%New("UnitTest.RLM.Widget", "Price")
     Do ..Source.AddDimension("colour", "Colour")
     Do ..Source.AddDimension("size", "Size")
@@ -84,7 +84,6 @@ Method TestPromptSizeIsIndependentOfRowCount()
     For i = 1:1:9 { Do ..Duplicate() }
     Set large = ..PlanPromptLength()
     Do $$$AssertEquals(large, small, "100 rows produce the same plan prompt as 10")
-    Do ##class(UnitTest.RLM.Widget).Populate()
 }
 
 Method PlanPromptLength() As %Integer
@@ -260,6 +259,156 @@ Method TestLLMPolicyReportIsUnchanged()
     Set report = engine.Run("what separates this store?", .traceId)
 
     Do $$$AssertEquals(report, ..Baseline(), "byte-identical to the pre-feature run")
+}
+
+/// US3 phase gate, and SC-004. The same run, rendered twice: every figure and
+/// every caveat in one is in the other.
+///
+/// Compared as sets of extracted numbers and caveat lines rather than as text,
+/// because the two documents are supposed to differ in punctuation -- comparing
+/// them literally would either fail always or require encoding the formatting
+/// rules into the test, which asserts the implementation against itself.
+Method TestBothStylesCarryTheSameFacts()
+{
+    Set plain = ..RunStyled("plain", .pt)
+    Set md = ..RunStyled("markdown", .mt)
+
+    Do $$$AssertEquals(..Numbers(md), ..Numbers(plain), "every figure survives")
+    Do $$$AssertEquals(..CaveatLines(md), ..CaveatLines(plain), "and every caveat")
+    Do $$$AssertNotEquals($Find(md, "## "), 0, "markdown really is markdown")
+    Do $$$AssertEquals($Find(plain, "## "), 0, "and plain really is not")
+}
+
+/// One run at a given style. Scripted replies are identical between calls, so the
+/// only difference between the two documents is the rendering.
+Method RunStyled(
+	style As %String,
+	Output traceId As %Integer) As %String
+{
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
+        "colour", "red note", "blue note", "answer"))
+    Set engine = ##class(RLM.Engine).%New(..Source, llm)
+    Set engine.ReportStyle = style
+    Quit engine.Run("what drives price?", .traceId)
+}
+
+/// Every run of digits in a document, comma-joined in order of appearance. A
+/// figure that changed, moved or vanished between styles changes this string.
+ClassMethod Numbers(text As %String) As %String
+{
+    Set out = "", n = ""
+    For i = 1:1:$Length(text) {
+        Set c = $Extract(text, i)
+        If (c ? 1N) || ((c = ".") && (n '= "")) { Set n = n_c  Continue }
+        If n '= "" { Set out = out_$Select(out="":"", 1:",")_n, n = "" }
+    }
+    Quit out_$Select(n="":"", 1:$Select(out="":"", 1:",")_n)
+}
+
+/// The caveat lines of a document, stripped of bullet punctuation so the two
+/// styles are comparable.
+ClassMethod CaveatLines(text As %String) As %String
+{
+    Set out = "", inCaveats = 0
+    For i = 1:1:$Length(text, $Char(10)) {
+        Set line = $Piece(text, $Char(10), i)
+        If $Find(line, "Limits of this analysis") { Set inCaveats = 1  Continue }
+        Continue:'inCaveats
+        Set stripped = $ZStrip(line, "<>W")
+        Continue:stripped=""
+        // Plain style underlines its heading with a rule of dashes and Markdown
+        // does not. That is the formatting difference this comparison is supposed
+        // to be blind to.
+        Continue:$Translate(stripped, "-")=""
+        // Both styles bullet with "- ", but strip it anyway: what is being compared
+        // is the sentence, not the marker.
+        If $Extract(stripped, 1, 2) = "- " { Set stripped = $Extract(stripped, 3, *) }
+        Set out = out_$Select(out="":"", 1:$Char(10))_stripped
+    }
+    Quit out
+}
+
+/// US2 phase gate, and SC-003. A bucketed dimension over a continuous column at
+/// scale: the declared number of children, every one of them reached, and the
+/// rows no bucket covers disclosed rather than absorbed.
+///
+/// Ten thousand rows rather than ten, because bucketing is the feature whose cost
+/// could plausibly scale with the data -- one range query per child is the claim,
+/// and a per-row loop would pass every smaller test.
+Method TestBucketedDimensionAtScale()
+{
+    Do ..Inflate(10000)
+    Set source = ##class(RLM.Source.Table).%New("UnitTest.RLM.Widget", "Price")
+    Do source.AddDimension("colour", "Colour")
+    Do source.AddBucketedDimension("rating", "Rating", $ListBuild(3, 7))
+
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
+        "rating", "low band", "mid band", "high band", "answer"))
+    Set engine = ##class(RLM.Engine).%New(source, llm, ##class(RLM.Budget).%New(12))
+    Set report = engine.Run("what does rating separate?", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 5, "decision + three buckets + synthesis")
+    Do $$$AssertNotEquals($Find(report, "Rating < 3"), 0, "the low bucket is named")
+    Do $$$AssertNotEquals($Find(report, "Rating [3,7)"), 0, "and the middle one")
+    Do $$$AssertNotEquals($Find(report, "Rating >= 7"), 0, "and the high one")
+    Set gap = $Find(report, "no bucket")
+    Do $$$AssertNotEquals(gap, 0, "and the rows in no bucket are disclosed")
+
+    // SC-003 as figures rather than as an existence claim. Rows, children and calls
+    // together are the measurement: three children over ten thousand rows for five
+    // model calls is the claim, and a per-row implementation would show the same
+    // three children while the peek count told a different story.
+    Set rows = source.Peek("").n
+    Set nulls = source.NullCount("", "rating")
+    // Hoisted for the one-line-macro rule, same as every $$$Assert* here.
+    Set msg = "SC-003: "_rows_" rows bucketed into 3 children with "_llm.Calls
+        _" model calls; "_nulls_" rows in no bucket, disclosed"
+    Do $$$LogMessage(msg)
+    Do $$$AssertTrue(rows >= 10000, "measured over ten thousand rows, not ten")
+}
+
+/// Grow the table to `target` rows, cycling Rating through every bucket and
+/// through null. Written as one INSERT per row deliberately: the shape of the
+/// data matters to the assertions above and a bulk copy would not give the null
+/// rows a predictable share.
+Method Inflate(target As %Integer) As %Status
+{
+    Set ratings = $ListBuild(1, 3, 5, 7, 9, "")
+    For i = 1:1:target {
+        Set w = ##class(UnitTest.RLM.Widget).%New()
+        Set w.Colour = $Select(i # 2:"red", 1:"blue")
+        Set w.Size = $Select(i # 3:"small", 1:"large")
+        Set w.Price = 10 + (i # 90)
+        Set w.Rating = $ListGet(ratings, (i # 6) + 1)
+        Set sc = w.%Save()
+        If $$$ISERR(sc) { Quit }
+    }
+    Quit $Get(sc, $$$OK)
+}
+
+/// US5 phase gate, and SC-006. A store that says it is unfit costs nothing.
+///
+/// Zero model calls is the assertion that matters and it is asserted on the
+/// provider's own counter rather than on the report: a run that produced the right
+/// refusal text after paying for a synthesis call has still spent a slot, and at
+/// scale that is the difference between a cheap refusal and an expensive one.
+///
+/// The scripted LLM is given an empty script deliberately. Any call at all becomes
+/// an unscripted-call error, so a regression that reintroduces a call fails loudly
+/// rather than producing a plausible document.
+Method TestNotReadyStoreCostsNothingAndSaysWhy()
+{
+    Set stale = ##class(UnitTest.RLM.FixtureNotReady).%New("nightly load")
+    Set llm = ##class(RLM.LLM.Null).%New("")
+    Set engine = ##class(RLM.Engine).%New(stale, llm)
+    Set report = engine.Run("what drives price?", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 0, "not one model call was spent")
+    Set why = $Find(report, "3 of 12 partitions are absent")
+    Do $$$AssertNotEquals(why, 0, "the store's own reason reaches the reader")
+    Do $$$AssertNotEquals($Find(report, "what drives price?"), 0, "and the question")
+    // No figures: a refusal that still reports a count invites the reader to use it.
+    Do $$$AssertEquals($Find(report, "n="), 0, "and no statistic is presented")
 }
 
 /// The pre-feature report, held as data so the comparison above is a comparison

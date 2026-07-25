@@ -174,6 +174,90 @@ Method TestDecisionIsASidecarAndLeavesTheRowIntact()
     Do $$$AssertEquals($ListGet(metrics, 2), "blue:400:0.25", "child metrics survive")
 }
 
+/// FR-016, first of three. A store that throws mid-run must not reach the caller
+/// as an exception.
+///
+/// The three cases are separate tests rather than one loop because the interesting
+/// part is not that a Try exists -- it is where each throw originates. A source
+/// throws below the engine, a policy throws inside a seam the engine calls, and a
+/// provider throws two frames down inside the policy; a single Try that caught the
+/// first can easily be positioned so it misses the third.
+///
+/// What is asserted is that the partial document survives: the root peek succeeded,
+/// so the store's statistics were known and belong in the report. Discarding them
+/// on the way out would make a mid-run failure indistinguishable from a store that
+/// could not be read at all.
+Method TestThrowingSourceBecomesAReportNotAnException()
+{
+    Set thrower = ##class(UnitTest.RLM.FixtureThrows).%New("brittle store")
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("color", "red", "blue", "synth"))
+    Set engine = ##class(RLM.Engine).%New(thrower, llm)
+    Set report = engine.Run("what separates this store?", .traceId)
+
+    Do $$$AssertNotEquals($Find(report, "stopped early"), 0, "the failure is stated")
+    Do $$$AssertNotEquals($Find(report, "n=1000"), 0, "what was known is kept")
+    Do $$$AssertNotEquals(traceId, "", "and the run is still identified")
+}
+
+/// FR-016, second of three. Obligation 7 says a policy never throws; the engine
+/// does not get to rely on that, because a policy is the seam third-party code
+/// plugs into.
+Method TestThrowingPolicyBecomesAReportNotAnException()
+{
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("synth"))
+    Set engine = ##class(RLM.Engine).%New(..Source, llm, ,
+        ##class(UnitTest.RLM.PolicyThrows).%New())
+    Set report = engine.Run("q", .traceId)
+
+    Do $$$AssertNotEquals($Find(report, "stopped early"), 0, "the failure is stated")
+    Do $$$AssertNotEquals($Find(report, "divided by zero"), 0, "and named")
+}
+
+/// FR-016, third of three. A real provider is an HTTP client, and a socket reset
+/// arrives as an exception however carefully RLM.LLM words its contract.
+Method TestThrowingProviderBecomesAReportNotAnException()
+{
+    Set llm = ##class(UnitTest.RLM.LLMThrows).%New()
+    Set engine = ##class(RLM.Engine).%New(..Source, llm)
+    Set report = engine.Run("q", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 1, "it failed on the first call")
+    Do $$$AssertNotEquals($Find(report, "stopped early"), 0, "the failure is stated")
+    Do $$$AssertNotEquals($Find(report, "closed the connection"), 0, "and named")
+}
+
+/// FR-015's default, asserted rather than assumed. UnitTest.RLM.Fixture does not
+/// override Ready, and the whole point of giving RLM.Source a concrete one is that
+/// no existing store needs editing to keep working.
+Method TestSourceWithoutReadyRunsUnchanged()
+{
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("color", "red", "blue", "synth"))
+    Set engine = ##class(RLM.Engine).%New(..Source, llm)
+    Set report = engine.Run("q", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 4, "the readiness check cost nothing")
+    Do $$$AssertNotEquals($Find(report, "n=1000"), 0, "and the run happened")
+    Do $$$AssertEquals($Find(report, "was not run"), 0, "nothing was refused")
+}
+
+/// A store that declines must decline before it is peeked, not after.
+///
+/// Asserted on the store's own peek counter rather than on the report, because the
+/// report of a run that peeked and then refused looks identical to one that refused
+/// first -- and on a store mid-load the peek is the expensive thing, and the thing
+/// most likely to fail.
+Method TestNotReadyStoreIsNotEvenPeeked()
+{
+    Set stale = ##class(UnitTest.RLM.FixtureNotReady).%New("nightly load")
+    Set llm = ##class(RLM.LLM.Null).%New("")
+    Set engine = ##class(RLM.Engine).%New(stale, llm)
+    Set report = engine.Run("q", .traceId)
+
+    Do $$$AssertEquals(llm.Calls, 0, "no model call")
+    Do $$$AssertEquals(stale.Peeks, 0, "and the store was never read")
+    Do $$$AssertNotEquals($Find(report, "was not run"), 0, "and the reader is told")
+}
+
 /// Absence has to mean something, or a reader cannot tell a step that made no
 /// decision from a decision that failed to record.
 Method TestOrdinaryRowHasNoDecisionSubtree()

@@ -29,7 +29,8 @@ Method ChooseSplit(
 	source As RLM.Source,
 	peek As %DynamicObject,
 	candidates As %List,
-	budget As RLM.Budget) As RLM.Decision
+	budget As RLM.Budget,
+	path As %String = "") As RLM.Decision
 {
     Set before = source.SplitMetric(peek)
     Set d = ##class(RLM.Decision).%New($ClassName(), before)
@@ -72,7 +73,10 @@ Method ChooseSplit(
             Set peeks = peeks + 1
 
             Set token = $ListGet(kids, i)
-            Set childPeek = source.Peek(source.Predicate($ListBuild(dim_":"_token)))
+            // Within `path`, not at the root: scoring the store-wide `size:small`
+            // while dividing `colour:red` returns a real number about the wrong
+            // population, which is worse than an error.
+            Set childPeek = source.Peek(..ChildPredicate(source, path, dim, token))
             If '$IsObject(childPeek) || (childPeek.error '= "") {
                 Set failed = "peek failed for '"_dim_":"_token_"'"
                 Quit

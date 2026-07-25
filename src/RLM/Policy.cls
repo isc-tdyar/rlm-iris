@@ -50,12 +50,41 @@ Property MaxChildrenSampled As %Integer [ InitialExpression = 8 ];
 /// are eligible. An implementation must not extend that set: a policy deriving
 /// its own candidates could derive a different one, and then two policies over
 /// the same store are not comparable, which defeats the seam.
+///
+/// `path` is the slice being divided, "" for the whole store. A policy that peeks
+/// a candidate's children must peek them *within* this path, which is what
+/// ChildPredicate is for. Scoring `size:small` when dividing `colour:red` scores
+/// the wrong slice, and the resulting decision is not wrong-looking -- it is a
+/// plausible number about a different population.
 Method ChooseSplit(
 	source As RLM.Source,
 	peek As %DynamicObject,
 	candidates As %List,
-	budget As RLM.Budget) As RLM.Decision [ Abstract ]
+	budget As RLM.Budget,
+	path As %String = "") As RLM.Decision [ Abstract ]
 {
+}
+
+/// The store predicate for one child of `dimension` within `path`.
+///
+/// Shared rather than open-coded per policy for the same reason Children is: a
+/// policy assembling its own components would peek a different slice, and the
+/// difference is invisible in the score it reports.
+ClassMethod ChildPredicate(
+	source As RLM.Source,
+	path As %String,
+	dimension As %String,
+	token As %String) As %String
+{
+    Set components = ""
+    For i = 1:1:$Length(path, ##class(RLM.Slice).#PATHSEP) {
+        Set comp = $Piece(path, ##class(RLM.Slice).#PATHSEP, i)
+        Continue:comp=""
+        Set components = components_$ListBuild(comp)
+    }
+    Set components = components
+        _$ListBuild(dimension_##class(RLM.Slice).#TOKENSEP_token)
+    Quit source.Predicate(components)
 }
 
 /// The children of a dimension as a %List of `token` values, in declaration

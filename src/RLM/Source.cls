@@ -77,4 +77,38 @@ Method ShouldSplit(peek As %DynamicObject, threshold As %Numeric = 0.15) As %Boo
     Quit ..SplitMetric(peek) > threshold
 }
 
+/// Whether this store is fit to report on at all.
+///
+/// Concrete rather than abstract, and returning 1, because "present but not fit
+/// to report on" is a state most stores do not have -- and an existing source
+/// must not need editing to stay ready.
+///
+/// A store that overrides this to return 0 owes the caller a `reason` it can act
+/// on. The alternative to the whole mechanism is averaging over whichever rows
+/// happen to be usable, which produces a document that is both confident and
+/// wrong.
+Method Ready(Output reason As %String) As %Boolean
+{
+    Set reason = ""
+    Quit 1
+}
+
+/// Rows inside `predicate` that `dimension` covers with no child, so that its
+/// children do not sum to their parent.
+///
+/// Concrete and returning 0, because a dimension enumerated from the data has no
+/// such rows by construction: every value it found is a child. Only a dimension
+/// whose children are declared -- a bucket set over a nullable column -- can miss
+/// rows, and only that store knows how many.
+///
+/// The engine asks so it can disclose the gap. A store that has one and reports 0
+/// produces a report whose figures do not reconcile, which is Constitution III's
+/// concern rather than a rounding matter.
+Method NullCount(
+	predicate As %String = "",
+	dimension As %String = "") As %Integer
+{
+    Quit 0
+}
+
 }

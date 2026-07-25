@@ -34,6 +34,15 @@ Property Dims As array Of %String;
 /// between runs. An unstable menu makes two traces incomparable.
 Property DimOrder As %List;
 
+/// dimension name -> breakpoints, ascending, for the bucketed dimensions only.
+/// A dimension appears here or in neither place; Dims holds the property for both
+/// kinds, so everything that resolves a term works the same way for each.
+Property Buckets As array Of %List;
+
+/// dimension name -> child labels supplied by the caller, one per child. Absent
+/// when the labels are derived from the edges.
+Property BucketLabels As array Of %List;
+
 Method %OnNew(
 	className As %String,
 	measure As %String = "") As %Status
@@ -64,6 +73,68 @@ Method AddDimension(
     Quit $$$OK
 }
 
+/// Declare a dimension over the ranges of a numeric property.
+///
+/// `n` breakpoints yield `n+1` children: the first covers everything below
+/// `breakpoints(1)`, the last everything from `breakpoints(n)` up, and child `i`
+/// covers `[breakpoints(i), breakpoints(i+1))` -- half-open and lower-inclusive,
+/// so a row sitting exactly on an edge lands in the upper bucket and lands in
+/// exactly one.
+///
+/// Tokens are ordinals (`b0` … `bn`) rather than range strings, so rewording a
+/// label does not invalidate a trace that named the child. The range lives in the
+/// label, which is what the model is shown.
+///
+/// Everything is validated here rather than at peek time, for the same reason
+/// AddDimension checks its property: a bad declaration discovered mid-run makes a
+/// configuration error look like a store failure.
+Method AddBucketedDimension(
+	dimension As %String,
+	property As %String,
+	breakpoints As %List,
+	labels As %List = "") As %Status
+{
+    If '##class(%Dictionary.CompiledProperty).%ExistsId(..ClassName_"||"_property) {
+        Quit $$$ERROR($$$GeneralError, "'"_property_"' is not a property of "_..ClassName)
+    }
+    Set n = $ListLength(breakpoints)
+    If n = 0 {
+        // One child covering everything is a slice identical to its parent, which
+        // FR-011 excludes wherever it arises.
+        Set msg = "'"_dimension_"' needs at least one breakpoint to divide anything"
+        Quit $$$ERROR($$$GeneralError, msg)
+    }
+    // `seen` counts rather than testing `prev` for emptiness: a first breakpoint of
+    // 0 compares equal to "" numerically, and the check would then skip the row
+    // after it.
+    Set bad = 0, seen = 0, prev = "", ptr = 0
+    While $ListNext(breakpoints, ptr, edge) {
+        // Strictly ascending numbers. Equal edges describe an empty range;
+        // descending ones describe overlapping ranges, and a row landing in two
+        // buckets makes the children over-count their parent.
+        If (edge '= +edge) || (seen && (edge '> prev)) { Set bad = 1 Quit }
+        Set prev = edge, seen = seen + 1
+    }
+    If bad {
+        Set msg = "'"_dimension
+            _"' breakpoints must be numbers in strictly ascending order"
+        Quit $$$ERROR($$$GeneralError, msg)
+    }
+    If (labels '= "") && ($ListLength(labels) '= (n + 1)) {
+        Set msg = "'"_dimension_"' has "_(n + 1)_" children but "
+            _$ListLength(labels)_" label(s) were supplied"
+        Quit $$$ERROR($$$GeneralError, msg)
+    }
+
+    Do ..Dims.SetAt(property, dimension)
+    Do ..Buckets.SetAt(breakpoints, dimension)
+    If labels '= "" { Do ..BucketLabels.SetAt(labels, dimension) }
+    If '$ListFind(..DimOrder, dimension) {
+        Set ..DimOrder = ..DimOrder_$ListBuild(dimension)
+    }
+    Quit $$$OK
+}
+
 Method Dimensions() As %DynamicObject
 {
     Set out = {}
@@ -71,6 +142,21 @@ Method Dimensions() As %DynamicObject
     While $ListNext(..DimOrder, ptr, dim) {
         Set property = ..Dims.GetAt(dim)
         Set spec = {"label": (property), "children": []}
+        // A bucketed dimension's children are declared, so they are emitted
+        // without touching the table -- and in the same shape a discovered child
+        // has, because FR-009 is the requirement that a policy cannot tell the two
+        // kinds apart.
+        If ..Buckets.IsDefined(dim) {
+            Set edges = ..Buckets.GetAt(dim)
+            Set given = ..BucketLabels.GetAt(dim)
+            For i = 0:1:$ListLength(edges) {
+                Set label = $Select(given'="":$ListGet(given, i + 1),
+                    1:..BucketLabel(property, edges, i))
+                Do spec.children.%Push({"token": ("b"_i), "label": (label)})
+            }
+            Do out.%Set(dim, spec)
+            Continue
+        }
         // %EXACT, because DISTINCT on a %String returns the collated value --
         // SQLUPPER by default. Advertising "RED" for a row holding "red" makes
         // the model name a slice the grammar then correctly refuses, and the
@@ -89,25 +175,50 @@ Method Dimensions() As %DynamicObject
 /// Build the WHERE clause. Called only by RLM.Slice with components it has
 /// already checked against Dimensions(), and tokens are carried as a delimited
 /// value list rather than spliced into text -- Peek binds them as parameters.
+/// The term encoding, widened. Each term is `property<C2>operator<C2>value`; a
+/// categorical component contributes one term with `=`, and a bucket contributes
+/// one or two with `>=` and `<`. The operator comes from this method and never
+/// from anything a model said, so the widening adds no authoring surface: it adds
+/// two more literals this class may write.
 Method Predicate(components As %List) As %String
 {
     Set out = "", ptr = 0
     While $ListNext(components, ptr, comp) {
         Set dim = $Piece(comp, ":", 1), token = $Piece(comp, ":", 2)
-        Set out = out_$Select(out="":"", 1:$Char(1))_..Dims.GetAt(dim)_$Char(2)_token
+        Set property = ..Dims.GetAt(dim)
+        If '..Buckets.IsDefined(dim) {
+            Set out = out_..Term(out, property, "=", token)
+            Continue
+        }
+        // Token `bi` is the i'th bucket: bounded below by edge i and above by edge
+        // i+1, with the first and last bucket each missing one side. Both bounds
+        // are dropped for a token outside the range, but RLM.Slice has already
+        // refused those -- the guard is here so a term list is never assembled
+        // from an ordinal this dimension does not have.
+        Set edges = ..Buckets.GetAt(dim)
+        Set i = +$Extract(token, 2, *)
+        If ($Extract(token) '= "b") || (i < 0) || (i > $ListLength(edges)) { Continue }
+        If i > 0 { Set out = out_..Term(out, property, ">=", $ListGet(edges, i)) }
+        If i < $ListLength(edges) {
+            Set out = out_..Term(out, property, "<", $ListGet(edges, i + 1))
+        }
     }
     Quit out
 }
 
+/// One encoded term, with its leading separator when it is not the first.
+ClassMethod Term(
+	sofar As %String,
+	property As %String,
+	op As %String,
+	value As %String) As %String
+{
+    Quit $Select(sofar="":"", 1:$Char(1))_property_$Char(2)_op_$Char(2)_value
+}
+
 Method Peek(predicate As %String = "") As %DynamicObject
 {
-    Set where = "", args = ""
-    Set ptr = 0
-    While $ListNext($ListFromString(predicate, $Char(1)), ptr, term) {
-        Continue:term=""
-        Set where = where_$Select(where="":" WHERE ", 1:" AND ")_$Piece(term, $Char(2), 1)_" = ?"
-        Set args = args_$ListBuild($Piece(term, $Char(2), 2))
-    }
+    Set where = ..Where(predicate, .args)
 
     Set sel = "COUNT(*) AS n"
     If ..Measure '= "" {
@@ -134,6 +245,59 @@ Method Peek(predicate As %String = "") As %DynamicObject
         Set peek.mean = rs.%Get("mean")
     }
     Quit peek
+}
+
+/// Decode a term list into a WHERE clause and its bound values.
+///
+/// Shared by Peek and NullCount rather than open-coded in each: the two would then
+/// be able to disagree about which rows a predicate names, and the null count
+/// exists precisely to reconcile against the counts Peek returns.
+Method Where(
+	predicate As %String,
+	Output args As %List) As %String
+{
+    Set where = "", args = "", ptr = 0
+    While $ListNext($ListFromString(predicate, $Char(1)), ptr, term) {
+        Continue:term=""
+        Set where = where_$Select(where="":" WHERE ", 1:" AND ")
+            _$Piece(term, $Char(2), 1)_" "_$Piece(term, $Char(2), 2)_" ?"
+        Set args = args_$ListBuild($Piece(term, $Char(2), 3))
+    }
+    Quit where
+}
+
+/// The derived label of bucket `i`, carrying the range the token does not.
+ClassMethod BucketLabel(
+	property As %String,
+	edges As %List,
+	i As %Integer) As %String
+{
+    Set n = $ListLength(edges)
+    If i = 0 { Quit property_" < "_$ListGet(edges, 1) }
+    If i = n { Quit property_" >= "_$ListGet(edges, n) }
+    Quit property_" ["_$ListGet(edges, i)_","_$ListGet(edges, i + 1)_")"
+}
+
+/// Rows inside `predicate` whose bucketed property is null, and which therefore
+/// appear in none of `dimension`'s children.
+///
+/// Only a bucketed dimension can have any: a categorical dimension's children are
+/// enumerated from the data, so every value it found is a child. Returning 0
+/// without querying for the other cases keeps the disclosure free where there is
+/// nothing to disclose.
+Method NullCount(
+	predicate As %String = "",
+	dimension As %String = "") As %Integer
+{
+    If dimension = "" { Quit 0 }
+    If '..Buckets.IsDefined(dimension) { Quit 0 }
+    Set property = ..Dims.GetAt(dimension)
+    Set where = ..Where(predicate, .args)
+    Set where = where_$Select(where="":" WHERE ", 1:" AND ")_property_" IS NULL"
+    Set rs = ..Query("SELECT COUNT(*) AS n FROM "_..SQLTable()_where, .sc, args)
+    If $$$ISERR(sc) { Quit 0 }
+    If 'rs.%Next() { Quit 0 }
+    Quit +rs.%Get("n")
 }
 
 Method Describe(

@@ -25,7 +25,8 @@ Method ChooseSplit(
 	source As RLM.Source,
 	peek As %DynamicObject,
 	candidates As %List,
-	budget As RLM.Budget) As RLM.Decision
+	budget As RLM.Budget,
+	path As %String = "") As RLM.Decision
 {
     Set before = source.SplitMetric(peek)
     Set d = ##class(RLM.Decision).%New($ClassName(), before)
