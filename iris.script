@@ -1,0 +1,10 @@
+    ; Compile the RLM package and its tests.
+    do $System.OBJ.LoadDir("/home/irisowner/dev/src","ck",,1)
+
+    ; Unit tests are run from the mounted source, not a copy.
+    set ^UnitTestRoot = "/home/irisowner/dev/src/UnitTest"
+
+    ; Development container: don't force a password change on first login.
+    zn "%SYS"
+    do ##class(Security.Users).UnExpireUserPasswords("*")
+    halt

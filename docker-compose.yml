@@ -1,0 +1,18 @@
+services:
+  iris:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rlm-iris
+    image: rlm-iris
+    init: true
+    # Ephemeral host ports: this machine runs several IRIS instances and 1972 is
+    # already owned by another project. Use `docker compose port iris 1972` to
+    # find the mapping.
+    ports:
+      - "1972"
+      - "52773"
+    # No durable %SYS: the classes are compiled into the image at build time, so
+    # a fresh container is the reproducible state we actually want.
+    volumes:
+      - ./:/home/irisowner/dev
