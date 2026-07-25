@@ -145,25 +145,25 @@ identifiable and re-peekable.
 
 ### Tests first (US3)
 
-- [ ] T023 [P] [US3] Write `src/UnitTest/RLM/Trace.cls`:
+- [x] T023 [P] [US3] Write `src/UnitTest/RLM/Trace.cls`:
       `TestEveryCandidateIsEnumerableByOrder`,
       `TestChildMetricsSurviveTheRoundTrip`,
       `TestFailedCandidateRecordsItsError` (FR-010),
       `TestRowWithoutDecisionSubtreeIsASubcallOrSynthesis`
-- [ ] T024 [US3] Add `TestAlternativeArmsAreRecoverableFromTraceAlone` to
+- [x] T024 [US3] Add `TestAlternativeArmsAreRecoverableFromTraceAlone` to
       `src/UnitTest/RLM/EndToEnd.cls`: run, discard the engine, then rebuild
       each decision's candidate set from `^||RLM.Trace` and re-peek one
       unchosen arm from the store (SC-003). This is the US3 phase gate.
 
 ### Implementation (US3)
 
-- [ ] T025 [US3] Ensure `RLM.Engine` writes a decision row for every split
+- [x] T025 [US3] Ensure `RLM.Engine` writes a decision row for every split
       choice including declines, so a run with no decomposition still records
       why (FR-009)
-- [ ] T026 [US3] Add a `Decisions(runId)` reader to `src/RLM/Trace.cls` that
+- [x] T026 [US3] Add a `Decisions(runId)` reader to `src/RLM/Trace.cls` that
       walks the sidecar and returns decisions with their candidates, so callers
       do not hand-parse `$LIST` rows
-- [ ] T027 [US3] **Phase gate**: run the whole suite; T024 must pass
+- [x] T027 [US3] **Phase gate**: run the whole suite; T024 must pass
 
 ## Phase 6: Polish
 

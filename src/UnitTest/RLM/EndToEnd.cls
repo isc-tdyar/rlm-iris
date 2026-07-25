@@ -180,6 +180,67 @@ Method TestUndecomposableStoreSaysSoInTheReport()
     Do $$$AssertNotEquals(why, 0, "and told why")
 }
 
+/// US3 phase gate, and SC-003. After a real run over a real table, the arms the
+/// policy did not take must be recoverable from the trace and the store alone.
+///
+/// The engine object is discarded before anything is read, because the reader
+/// this exists for has a run id and a database, not a live engine. And the
+/// unchosen arm is not merely listed but re-peeked: a name that cannot be turned
+/// back into a predicate is a label, not evidence, and re-scoring needs evidence.
+Method TestAlternativeArmsAreRecoverableFromTraceAlone()
+{
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("red", "blue", "answer"))
+    Set engine = ##class(RLM.Engine).%New(..Source, llm, ,
+        ##class(RLM.Policy.Greedy).%New())
+    Do engine.Run("what drives price?", .traceId)
+    Kill engine
+
+    Set decisions = ##class(RLM.Trace).Decisions(traceId, 0, .seqs)
+    Do $$$AssertEquals(decisions.Count(), 1, "the run's one decision is there")
+    Set d = decisions.GetAt(1)
+    Do $$$AssertEquals(d.Dimension, "colour", "which arm was taken")
+    Do $$$AssertEquals(d.Candidates.Count(), 2, "and which were available")
+
+    // Find the arm that was not chosen, whatever order the store offered them in.
+    Set other = ""
+    For i = 1:1:d.Candidates.Count() {
+        Set cand = d.Candidates.GetAt(i)
+        If cand.Dimension '= d.Dimension { Set other = cand }
+    }
+    Do $$$AssertTrue($IsObject(other), "the road not taken is on the record")
+    Do $$$AssertNotEquals(other.Score, "", "already scored, without a model call")
+
+    // Re-peek it from the store. A fresh Source, to prove the trace plus the
+    // store is sufficient and the run's own objects are not needed.
+    Set source = ##class(RLM.Source.Table).%New("UnitTest.RLM.Widget", "Price")
+    Do source.AddDimension("colour", "Colour")
+    Do source.AddDimension("size", "Size")
+    Set token = $Piece($ListGet(other.ChildMetrics, 1), ":", 1)
+    Set peek = source.Peek(source.Predicate($ListBuild(other.Dimension_":"_token)))
+    Do $$$AssertEquals(peek.error, "", "the unchosen arm re-peeks cleanly")
+    Set n = $Piece($ListGet(other.ChildMetrics, 1), ":", 2)
+    Do $$$AssertEquals(+peek.n, +n, "and returns what the trace said it would")
+    Do $$$AssertEquals(llm.Calls, 3, "and none of this cost a model call")
+}
+
+/// FR-009. A run that decomposed nothing must still record why, or the trace of a
+/// declined split is indistinguishable from a trace that failed to write.
+Method TestDeclinedSplitIsStillATracedDecision()
+{
+    Set flat = ##class(UnitTest.RLM.FixtureFlat).%New()
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild("answer"))
+    Set engine = ##class(RLM.Engine).%New(flat, llm, ,
+        ##class(RLM.Policy.Greedy).%New())
+    Do engine.Run("q", .traceId)
+
+    Set decisions = ##class(RLM.Trace).Decisions(traceId)
+    Do $$$AssertEquals(decisions.Count(), 1, "the decision not to split is recorded")
+    Set d = decisions.GetAt(1)
+    Do $$$AssertNotTrue(d.Chose(), "as a decline")
+    Do $$$AssertNotEquals(d.Reason, "", "with its reason")
+    Do $$$AssertEquals(d.Candidates.Count(), 2, "and the arms it rejected")
+}
+
 /// US2 phase gate, and SC-004. The report the LLM policy produces from a given
 /// set of scripted replies must be the one the pre-feature engine produced from
 /// the same replies -- byte for byte, not "equivalent".
