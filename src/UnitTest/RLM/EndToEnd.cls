@@ -180,6 +180,47 @@ Method TestUndecomposableStoreSaysSoInTheReport()
     Do $$$AssertNotEquals(why, 0, "and told why")
 }
 
+/// US2 phase gate, and SC-004. The report the LLM policy produces from a given
+/// set of scripted replies must be the one the pre-feature engine produced from
+/// the same replies -- byte for byte, not "equivalent".
+///
+/// The expected text below was captured from the engine before RLM.Policy
+/// existed. Asserting on the whole document rather than on parts of it is
+/// deliberate: a caveat that quietly appears or a heading that quietly changes
+/// width is exactly the kind of drift a spot-check misses, and the report is what
+/// a reader is given.
+Method TestLLMPolicyReportIsUnchanged()
+{
+    Set fixture = ##class(UnitTest.RLM.Fixture).%New("fixture store")
+    Set llm = ##class(RLM.LLM.Null).%New($ListBuild(
+        "color", "red is tight", "blue is tight",
+        "colour separates the population"))
+    Set engine = ##class(RLM.Engine).%New(fixture, llm)
+    Set report = engine.Run("what separates this store?", .traceId)
+
+    Do $$$AssertEquals(report, ..Baseline(), "byte-identical to the pre-feature run")
+}
+
+/// The pre-feature report, held as data so the comparison above is a comparison
+/// and not a re-derivation.
+ClassMethod Baseline() As %String
+{
+    Set nl = $Char(10)
+    Quit "Question"_nl_"--------"_nl
+        _"what separates this store?"_nl_nl
+        _"Store"_nl_"-----"_nl
+        _"fixture store: n=1000, metric=0.90"_nl_nl
+        _"Slices examined"_nl_"---------------"_nl
+        _"- red [red: n=600, metric=0.20] red is tight"_nl
+        _"- blue [blue: n=400, metric=0.25] blue is tight"_nl_nl
+        _"Answer"_nl_"------"_nl
+        _"colour separates the population"_nl_nl
+        _"Limits of this analysis"_nl_"-----------------------"_nl
+        // No trailing newline: RLM.Report joins its lines and does not terminate
+        // the last one.
+        _"- Spent 4/8 model calls."
+}
+
 Method Roles(traceId As %Integer) As %String
 {
     Set roles = "", seq = ""

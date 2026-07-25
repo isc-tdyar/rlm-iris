@@ -112,26 +112,26 @@ dimension name becomes a decline rather than a split.
 
 ### Tests first (US2)
 
-- [ ] T018 [P] [US2] Write `src/UnitTest/RLM/PolicyLLM.cls`:
+- [x] T018 [P] [US2] Write `src/UnitTest/RLM/PolicyLLM.cls`:
       `TestReturnsTheDimensionTheModelNamed`,
       `TestHallucinatedDimensionBecomesADecline` (model's answer quoted in
       `Reason`), `TestPromptListsOnlyCandidatesAndAggregates`,
       `TestChargesExactlyOneModelCall`
-- [ ] T019 [US2] Add `TestLLMPolicyReportIsUnchanged` to
+- [x] T019 [US2] Add `TestLLMPolicyReportIsUnchanged` to
       `src/UnitTest/RLM/EndToEnd.cls` — byte-compare against the report the
       pre-feature engine produced from the same scripted replies (SC-004). This
       is the US2 phase gate.
 
 ### Implementation (US2)
 
-- [ ] T020 [US2] Implement `src/RLM/Policy/LLM.cls`: one `Complete()` call whose
+- [x] T020 [US2] Implement `src/RLM/Policy/LLM.cls`: one `Complete()` call whose
       prompt carries the candidate names and the parent's aggregates only,
       validate the reply against `candidates`, return a decision either way
       (FR-005, FR-006)
-- [ ] T021 [US2] Default `RLM.Engine.Policy` to `RLM.Policy.LLM` in `%OnNew`
+- [x] T021 [US2] Default `RLM.Engine.Policy` to `RLM.Policy.LLM` in `%OnNew`
       when none is supplied (FR-007), keeping `RLM.Engine` free of any
       `%AI.*` or HTTP reference
-- [ ] T022 [US2] **Phase gate**: run the whole suite; T019 must pass before
+- [x] T022 [US2] **Phase gate**: run the whole suite; T019 must pass before
       Phase 5
 
 ## Phase 5: User Story 3 — Score the road not taken (P3)
