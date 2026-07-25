@@ -14,6 +14,14 @@
 /// The SQL is assembled from class metadata only. Dimension properties are
 /// checked against the compiled class when declared, and tokens are bound as
 /// parameters, so nothing a model says reaches the query as text.
+///
+/// Dimensions are declared with *property* names and every query is written with
+/// *column* names, and the two are only the same string by coincidence. On a class
+/// created by DDL they are routinely different -- `reject_fraction` the column is
+/// `rejectfraction` the property -- so a source that used one name for both could
+/// not be declared and queried at the same time: the property name fails in SQL
+/// and the column name fails validation. SQLTable() and Column() are the two
+/// translations, and both read the dictionary rather than deriving a name.
 Class RLM.Source.Table Extends RLM.Source
 {
 
@@ -161,8 +169,9 @@ Method Dimensions() As %DynamicObject
         // SQLUPPER by default. Advertising "RED" for a row holding "red" makes
         // the model name a slice the grammar then correctly refuses, and the
         // resulting run looks like a model failure rather than a discovery bug.
-        Set rs = ..Query("SELECT DISTINCT %EXACT("_property_") AS v FROM "_..SQLTable()
-            _" WHERE "_property_" IS NOT NULL ORDER BY %EXACT("_property_")", .sc)
+        Set col = ..Column(property)
+        Set rs = ..Query("SELECT DISTINCT %EXACT("_col_") AS v FROM "_..SQLTable()
+            _" WHERE "_col_" IS NOT NULL ORDER BY %EXACT("_col_")", .sc)
         If $$$ISERR(sc) { Do out.%Set(dim, spec) Continue }
         While rs.%Next() {
             Do spec.children.%Push({"token": (rs.%Get("v")), "label": (rs.%Get("v"))})
@@ -185,7 +194,10 @@ Method Predicate(components As %List) As %String
     Set out = "", ptr = 0
     While $ListNext(components, ptr, comp) {
         Set dim = $Piece(comp, ":", 1), token = $Piece(comp, ":", 2)
-        Set property = ..Dims.GetAt(dim)
+        // The column, not the property: a term is decoded straight into a WHERE
+        // clause by Where(), so translating here is what keeps that method a pure
+        // decoder with nothing to look up.
+        Set property = ..Column(..Dims.GetAt(dim))
         If '..Buckets.IsDefined(dim) {
             Set out = out_..Term(out, property, "=", token)
             Continue
@@ -222,8 +234,11 @@ Method Peek(predicate As %String = "") As %DynamicObject
 
     Set sel = "COUNT(*) AS n"
     If ..Measure '= "" {
-        Set sel = sel_", MIN("_..Measure_") AS lo, MAX("_..Measure_") AS hi"
-            _", AVG("_..Measure_") AS mean"
+        // The measure reaches SQL through the select list rather than the WHERE
+        // clause, so it needs the same translation by a separate path.
+        Set m = ..Column(..Measure)
+        Set sel = sel_", MIN("_m_") AS lo, MAX("_m_") AS hi"
+            _", AVG("_m_") AS mean"
     }
     Set sql = "SELECT "_sel_" FROM "_..SQLTable()_where
     If ..MaxRows {
@@ -291,7 +306,7 @@ Method NullCount(
 {
     If dimension = "" { Quit 0 }
     If '..Buckets.IsDefined(dimension) { Quit 0 }
-    Set property = ..Dims.GetAt(dimension)
+    Set property = ..Column(..Dims.GetAt(dimension))
     Set where = ..Where(predicate, .args)
     Set where = where_$Select(where="":" WHERE ", 1:" AND ")_property_" IS NULL"
     Set rs = ..Query("SELECT COUNT(*) AS n FROM "_..SQLTable()_where, .sc, args)
@@ -328,11 +343,44 @@ Method SplitMetric(peek As %DynamicObject) As %Numeric
     Quit $Select(spread > 1:1, 1:spread)
 }
 
-/// SQL name of the extent.
+/// SQL name of the extent, from the dictionary.
+///
+/// Not derived from the class name. Package-to-schema is not a string
+/// transformation: `User` maps to schema `SQLUser`, and a derived `USER` is a
+/// reserved word, so the query does not merely name the wrong table -- it fails to
+/// parse, and every peek on any store in USER comes back as an error. SqlTableName
+/// can be overridden independently of the class name as well.
+///
+/// The derivation is kept as the fallback for a class that is not compiled, where
+/// there is no dictionary entry to read and the caller is about to get an error
+/// from SQL either way: a guess names the table the caller probably meant, which
+/// makes the error message the useful one.
 Method SQLTable() As %String
 {
+    Set c = ##class(%Dictionary.CompiledClass).%OpenId(..ClassName, , .sc)
+    If $IsObject($Get(c)), c.SqlSchemaName '= "", c.SqlTableName '= "" {
+        Quit c.SqlSchemaName_"."_c.SqlTableName
+    }
     Set schema = $Piece(..ClassName, ".", 1, $Length(..ClassName, ".") - 1)
     Quit $Translate(schema, ".", "_")_"."_$Piece(..ClassName, ".", $Length(..ClassName, "."))
+}
+
+/// SQL column name of a property, from the dictionary.
+///
+/// The one place a property name becomes a column name. Every query in this class
+/// goes through it, because a single path that skipped it would be a query that
+/// disagreed with the others about which column a dimension names -- which is the
+/// same failure the shared Where() exists to prevent one level up.
+///
+/// Falls back to the property name for anything not in the dictionary (a computed
+/// alias, an uncompiled class), which is what this class did everywhere before the
+/// translation existed.
+Method Column(property As %String) As %String
+{
+    If property = "" { Quit "" }
+    Set p = ##class(%Dictionary.CompiledProperty).%OpenId(..ClassName_"||"_property, , .sc)
+    If $IsObject($Get(p)), p.SqlFieldName '= "" { Quit p.SqlFieldName }
+    Quit property
 }
 
 /// Run a query, returning a result set. Errors come back as a status rather than
