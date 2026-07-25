@@ -61,17 +61,17 @@ compiling, `%UnitTest` skips them, and the run still prints "All PASSED".
 **Purpose**: both containers up, both suites green, baseline figures recorded
 before anything moves.
 
-- [ ] T001 Verify `rlm-iris` and `gaia-iml-iris` are both running
+- [x] T001 Verify `rlm-iris` and `gaia-iml-iris` are both running
       (`docker ps`), and that neither is being used for the other's work
-- [ ] T002 Run the `rlm-iris` suite and record the pass count as the pre-port
+- [x] T002 Run the `rlm-iris` suite and record the pass count as the pre-port
       baseline (expected 136)
-- [ ] T003 Run the existing `gaia-iml` suite (`UnitTest.Gaia.RLM2`) and record
+- [x] T003 Run the existing `gaia-iml` suite (`UnitTest.Gaia.RLM2`) and record
       its pass count as the pre-port baseline
-- [ ] T004 [P] Record pre-port line counts per file under `gaia-iml/src/Gaia/`
+- [x] T004 [P] Record pre-port line counts per file under `gaia-iml/src/Gaia/`
       into `specs/003-gaia-port/baseline-lines.txt` in `rlm-iris` — SC-002
       measures against this, and a figure recomputed after the fact is not a
       baseline
-- [ ] T005 [P] Confirm the pre-port reports are preserved at
+- [x] T005 [P] Confirm the pre-port reports are preserved at
       `gaia-iml/data/out-baseline/` and are readable
 
 ---
@@ -89,37 +89,37 @@ exist.
 Defect 3 of plan.md. Under FR-014 the fix lands here with a test, not as a
 workaround in Gaia.
 
-- [ ] T006 Write the failing test first in
+- [x] T006 Write the failing test first in
       `rlm-iris/src/UnitTest/RLM/ReportStyle.cls`: `WriteTextToFile(text, path)`
       writes UTF-8, round-trips an em dash, returns a bad status (not an
       exception) for an unwritable path, and the existing instance
       `WriteToFile(path)` behaviour is unchanged
-- [ ] T007 Run the `rlm-iris` suite and confirm the new test FAILS for the right
+- [x] T007 Run the `rlm-iris` suite and confirm the new test FAILS for the right
       reason (`<METHOD DOES NOT EXIST>`), not a compile error
-- [ ] T008 Add `ClassMethod WriteTextToFile(text, path) As %Status` to
+- [x] T008 Add `ClassMethod WriteTextToFile(text, path) As %Status` to
       `rlm-iris/src/RLM/Report.cls` and reduce the instance method
       `WriteToFile(path)` at line 129 to a delegating one-liner
-- [ ] T009 Run the `rlm-iris` suite: 136 + new tests, all pass. **Gate.**
+- [x] T009 Run the `rlm-iris` suite: 136 + new tests, all pass. **Gate.**
 
 ### Submodule delivery (gaia-iml)
 
 Research decision 1. IPM is not available in the prototype's image, verified.
 
-- [ ] T010 Add `rlm-iris` as a git submodule at `gaia-iml/lib/rlm-core`, pinned
+- [x] T010 Add `rlm-iris` as a git submodule at `gaia-iml/lib/rlm-core`, pinned
       to the commit that contains T008
-- [ ] T011 Edit `gaia-iml/iris.script` to `LoadDir("/home/irisowner/dev/lib/rlm-core/src","ck",,1)`
+- [x] T011 Edit `gaia-iml/iris.script` to `LoadDir("/home/irisowner/dev/lib/rlm-core/src","ck",,1)`
       **before** the existing `LoadDir` over `src/` — the prototype's classes
       extend the library's, so load order is not cosmetic
-- [ ] T012 [P] Add a `<Dependencies>` entry naming `rlm-core` to
+- [x] T012 [P] Add a `<Dependencies>` entry naming `rlm-core` to
       `gaia-iml/module.xml`, for the IPM path on images that have IPM
-- [ ] T013 [P] Add `lib/rlm-core` guidance to `gaia-iml/README.md`: a plain
+- [x] T013 [P] Add `lib/rlm-core` guidance to `gaia-iml/README.md`: a plain
       `git clone` yields an empty submodule and nothing compiles
-- [ ] T014 Rebuild/restart `gaia-iml-iris` and confirm `RLM.Engine`,
+- [x] T014 Rebuild/restart `gaia-iml-iris` and confirm `RLM.Engine`,
       `RLM.Source.Table`, `RLM.Slice`, `RLM.Budget`, `RLM.Report` and
       `RLM.LLM.Null` all compile in that container
-- [ ] T015 Assert FR-013 mechanically: no file matching `src/RLM/*` exists under
+- [x] T015 Assert FR-013 mechanically: no file matching `src/RLM/*` exists under
       `gaia-iml/src/`. A copy would satisfy the compiler and violate the spec
-- [ ] T016 Run the existing `gaia-iml` suite. It must still match T003. **Gate.**
+- [x] T016 Run the existing `gaia-iml` suite. It must still match T003. **Gate.**
 
 **Checkpoint**: library compiles in the prototype's container, a caller can
 write a report to disk, no copies exist. US1 and US2 can now begin.
@@ -136,84 +136,84 @@ no policy and no model.
 
 ### Tests for US1 — write these first, confirm they fail
 
-- [ ] T017 [P] [US1] Create `gaia-iml/src/UnitTest/Gaia/Source.cls` with the
+- [x] T017 [P] [US1] Create `gaia-iml/src/UnitTest/Gaia/Source.cls` with the
       declaration tests: `Dimensions()` returns exactly the six of
       data-model.md; the child count is computed and **printed**, not asserted
       against a constant (SC-001, and the reason the "21 slices" figure
       survived as long as it did); every child label carries its numeric range
-- [ ] T018 [P] [US1] Add the resolution tests: for each of the 22 children,
+- [x] T018 [P] [US1] Add the resolution tests: for each of the 22 children,
       `RLM.Slice.Resolve` yields a predicate whose `Peek().n` matches the
       measured population from data-model.md (`variability` 17,899 / 17,204 /
       31,224 / 8,671; `detection` 17,899 / 57,099), and the four `variability`
       children sum to 74,998
-- [ ] T019 [P] [US1] Add the boundary test: `epoch_count` is half-open at 5, 20
+- [x] T019 [P] [US1] Add the boundary test: `epoch_count` is half-open at 5, 20
       and 60. 2,834 rows sit exactly on a breakpoint, so `>=` vs `>` is
       observable here even though it is not for `pct_change`
-- [ ] T020 [P] [US1] Add the containment test: for a two-level path, each
+- [x] T020 [P] [US1] Add the containment test: for a two-level path, each
       child's `n` sums to its parent's `n` and no row is counted twice
-- [ ] T021 [P] [US1] Add the `Peek()` shape test: all sixteen aggregates of
+- [x] T021 [P] [US1] Add the `Peek()` shape test: all sixteen aggregates of
       data-model.md present plus `capped = 0`; `{"n": 0}` for an empty slice; a
       malformed predicate yields `{"error": …}` rather than an exception
-- [ ] T022 [P] [US1] Add the `Describe()` tests: the eleven self-labelling lines
+- [x] T022 [P] [US1] Add the `Describe()` tests: the eleven self-labelling lines
       present with their units, both warnings present (a coefficient of
       variation is not an uncertainty; a prediction error is not a reject
       fraction), and "This slice contains no sources." for `n = 0`
-- [ ] T023 [P] [US1] Add the `SplitMetric()` tests: within 0-1 inclusive for
+- [x] T023 [P] [US1] Add the `SplitMetric()` tests: within 0-1 inclusive for
       every child; clamps to exactly 1 for a slice more spread than the survey;
       returns 0 for an error peek and for a zero baseline; the baseline is
       computed once per instance and two instances do not share it
-- [ ] T024 [P] [US1] Add the `ShouldSplit()` tests: true only when
+- [x] T024 [P] [US1] Add the `ShouldSplit()` tests: true only when
       `SplitMetric >= 1` **and** `n >= 400`; false at `n = 399` regardless of
       spread; the `threshold` argument is ignored, asserted by passing 0.99 and
       0.01 and getting the same answer
-- [ ] T025 [P] [US1] Add the `Ready()` tests: passes on the live table; the
+- [x] T025 [P] [US1] Add the `Ready()` tests: passes on the live table; the
       two refusal messages are distinguishable and each names both counts and
       the routine to run (simulate the empty and partial cases without mutating
       the real table)
-- [ ] T026 [P] [US1] Add the principle-I test: a `source_id` held by exactly one
+- [x] T026 [P] [US1] Add the principle-I test: a `source_id` held by exactly one
       row appears in no string `Gaia.Source` produces — not in a peek, not in a
       `Describe`, not in a label
-- [ ] T027 [P] [US1] Add the `NullCount()` test: wired and returning 0 for every
+- [x] T027 [P] [US1] Add the `NullCount()` test: wired and returning 0 for every
       dimension today, asserted rather than assumed (FR-002, principle III)
-- [ ] T028 [US1] Run the Gaia suite and confirm the US1 tests FAIL for the right
+- [x] T028 [US1] Run the Gaia suite and confirm the US1 tests FAIL for the right
       reason (`Gaia.Source` does not exist), not a compile error
 
 ### Implementation for US1
 
-- [ ] T029 [US1] Create `gaia-iml/src/Gaia/Source.cls` extending
+- [x] T029 [US1] Create `gaia-iml/src/Gaia/Source.cls` extending
       `RLM.Source.Table`: `%OnNew()` takes no arguments, calls
       `##super("SQLUser.GaiaQualityScored", "reject_fraction")`, then declares
       the five prototype dimensions via `AddBucketedDimension` with explicit
       labels, checking every returned `%Status` (FR-001)
-- [ ] T030 [US1] Declare the sixth dimension `detection` over `pct_change` with
+- [x] T030 [US1] Declare the sixth dimension `detection` over `pct_change` with
       one breakpoint at 100 (FR-001a) — the population `Triage` has always
       described, now nameable
-- [ ] T031 [US1] Override `Dimensions()` to call `##super()` and overwrite each
+- [x] T031 [US1] Override `Dimensions()` to call `##super()` and overwrite each
       dimension's `label` with the prototype's descriptive sentence, leaving
       children untouched. The library has no declared slot for dimension-level
       prose; this is where it goes
-- [ ] T032 [US1] Override `Peek(predicate)`: the prototype's sixteen aggregates
+- [x] T032 [US1] Override `Peek(predicate)`: the prototype's sixteen aggregates
       plus `capped: 0`, built on `..Where(predicate, .args)` with every value
       bound as a parameter. It must not assemble a `WHERE` clause as text —
       sharing the inherited method is what stops `Peek` and `NullCount`
       disagreeing about which rows a predicate names (FR-002)
-- [ ] T033 [US1] Override `Describe(label, peek)`: the eleven lines verbatim
+- [x] T033 [US1] Override `Describe(label, peek)`: the eleven lines verbatim
       from `Gaia/RLM.cls`, both warnings, and the empty-slice sentence (FR-003)
-- [ ] T034 [US1] Add `Property Baseline As %Numeric [ InitialExpression = -1 ]`
+- [x] T034 [US1] Add `Property Baseline As %Numeric [ InitialExpression = -1 ]`
       and override `SplitMetric(peek)` as `min(1, sd_rej / Baseline)`, computing
       the baseline on first call and caching it in the instance — instance scope
       is run scope (FR-004, research decision 5)
-- [ ] T035 [US1] Override `ShouldSplit(peek, threshold)` as
+- [x] T035 [US1] Override `ShouldSplit(peek, threshold)` as
       `(SplitMetric(peek) >= 1) && (peek.n >= 400)`, with a comment at the site
       recording that `threshold` is ignored deliberately and that the parent
       declares it (FR-005)
-- [ ] T036 [US1] Override `Ready(.reason)` with its own `COUNT` query, not a
+- [x] T036 [US1] Override `Ready(.reason)` with its own `COUNT` query, not a
       peek: the engine calls it before the root peek precisely because that peek
       is the expensive call on a store mid-load. Two distinguishable refusals
       (FR-006)
-- [ ] T037 [US1] Run the Gaia suite: all US1 tests pass. Print the computed
+- [x] T037 [US1] Run the Gaia suite: all US1 tests pass. Print the computed
       dimension and child counts (SC-001)
-- [ ] T038 [US1] Run the `rlm-iris` suite. Still green. A break here is a
+- [x] T038 [US1] Run the `rlm-iris` suite. Still green. A break here is a
       library defect and FR-014 says the fix goes there. **Gate.**
 
 **Checkpoint**: the store is readable by the library with no engine involved.
