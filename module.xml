@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+  <Document name="rlm-core.ZPM">
+    <Module>
+      <Name>rlm-core</Name>
+      <Description>Recursive-LM decomposition over live IRIS stores. Answers questions about tables, globals, interoperability message flow and audit logs that are too large, too live or too regulated to export: slice aggregates are computed inside IRIS and only those statistics reach the model, so context grows with slices inspected rather than store size. No %AI.* dependency; talks to any OpenAI-compatible endpoint.</Description>
+      <Version>0.0.1</Version>
+      <Author>
+        <Person>Thomas Dyar</Person>
+        <Organization>InterSystems</Organization>
+        <License>MIT</License>
+      </Author>
+      <Packaging>module</Packaging>
+      <SourcesRoot>src</SourcesRoot>
+      <Resource Name="RLM.PKG"/>
+      <Resource Name="UnitTest.RLM.PKG"/>
+      <Keywords>rlm,recursive-language-model,llm,globals,long-context,analytics,agent,objectscript</Keywords>
+    </Module>
+  </Document>
+</Export>
