@@ -272,7 +272,7 @@ asserted against a hand computation.
       with what actually shipped
 - [x] T056 [P] Add `specs/004-global-source/quickstart.md` showing a real
       decomposition of a real global, with the figures the suite produces
-- [ ] T057 Commit, stating what changed and why the `Dimensions(path)` change is
+- [x] T057 Commit, stating what changed and why the `Dimensions(path)` change is
       behavior-preserving, plus the platform limits from research.md
 
 ---
