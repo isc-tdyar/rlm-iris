@@ -173,6 +173,15 @@ Method Execute(
         Quit report.Text
     }
 
+    // Record what a replay will need, now that the scope is known to resolve.
+    // Durable traces only, and after the two refusals above: a run that never
+    // started needs no fingerprint, and computing one costs a peek per slice.
+    If ..DurableTrace {
+        Do trace.Begin(question, ##class(RLM.Trace).StoreFingerprint(..Source),
+            $ListBuild(..Budget.Total, ..Budget.Reserved, ..Budget.PeekTotal,
+                ..MaxDepth, rootPath, ..ReportStyle))
+    }
+
     // Characterize the starting slice first. This is the only unconditional peek:
     // without it the model has nothing to choose a split from.
     Set rootPeek = ..Source.Peek(rootPredicate)
@@ -358,8 +367,14 @@ Method Decide(
 	ByRef caveats As %List) As RLM.Decision
 {
     Set candidates = ..Candidates(path)
+    // Measured around the call, not taken from the decision. A policy reports its
+    // own peeks and no calls at all, and a replay has to spend the same budget to
+    // print the same "Spent ..." line.
+    Set callsBefore = ..Budget.Used, peeksBefore = ..Budget.PeeksUsed
     Set decision = ..Policy.ChooseSplit(..Source, peek, candidates, ..Budget, path)
-    Do trace.AddDecision(decision, depth, $ClassName(..Source), path)
+    Set seq = trace.AddDecision(decision, depth, $ClassName(..Source), path)
+    Do trace.SetDecisionCost(seq, ..Budget.Used - callsBefore,
+        ..Budget.PeeksUsed - peeksBefore)
     If decision.Capped {
         Set caveats = caveats_$ListBuild("The split decision was limited by a cap, so it rests on partial evidence.")
     }
@@ -433,9 +448,13 @@ Method Ask(
     Set sc = ..Budget.Charge(1)
     If $$$ISERR(sc) { Quit "" }
     Set out = ..LLM.Complete(instructions, prompt, .sc)
-    Do trace.Add(role, depth, sliceKey, $ClassName(..Source), metric,
+    Set seq = trace.Add(role, depth, sliceKey, $ClassName(..Source), metric,
         $Length(prompt), $Length(out), ..LLM.Model, 0,
         $Select($$$ISERR(sc):$System.Status.GetErrorText(sc), 1:""))
+    // The row keeps the length; the text goes in a sidecar, so a replay reproduces
+    // this report rather than approximating it. Durable traces only -- SetText is
+    // a no-op otherwise.
+    Do trace.SetText(seq, out)
     Quit out
 }
 
@@ -458,9 +477,10 @@ Method Synthesize(
         While $ListNext(notes, ptr, n) { Set body = body_"- "_n_$Char(10) }
     }
     Set out = ..LLM.Complete(..SynthesisInstructions(), body, .ssc)
-    Do trace.Add("synthesis", 0, "", $ClassName(..Source), , $Length(body),
+    Set seq = trace.Add("synthesis", 0, "", $ClassName(..Source), , $Length(body),
         $Length(out), ..LLM.Model, 0,
         $Select($$$ISERR(ssc):$System.Status.GetErrorText(ssc), 1:""))
+    Do trace.SetText(seq, out)
     If $$$ISERR(ssc) { Quit "(no answer: "_$System.Status.GetErrorText(ssc)_")" }
     Quit out
 }

@@ -87,6 +87,10 @@ ClassMethod RenderTrace(
         If durable { Set seq = $Order(^RLM.Trace(runId, seq), 1, row) }
         Else { Set seq = $Order(^||RLM.Trace(runId, seq), 1, row) }
         Quit:seq=""
+        // Rows are numeric subscripts. A trace's metadata nodes ("fp", "q", "v")
+        // hold plain strings, so $List over one of them returns junk rather than
+        // failing -- a rendered line nobody can account for.
+        Quit:seq'?1.N
         Set role = $List(row, 1), depth = $List(row, 2)
         Set slice = $List(row, 4), note = $List(row, 10)
         // Padded by hand: $Justify's second argument is a width and its third is a

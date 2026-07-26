@@ -214,8 +214,22 @@ shape than the harness spec proposes, the blast radius is `RLM.LLM.AIHub` and
   serializes to within 3% of the small one. `$QUERY` was rejected for the walk:
   it visits only nodes holding a value, so a global with pointer interiors
   reports a node count far below its real one.
-- **M3 — replay + offline evaluation + `RLM.LLM.Null` CI.** Answers "does the
-  LLM beat Greedy" with numbers.
+- **M3 — replay + offline evaluation + `RLM.LLM.Null` CI. Shipped.** A finished
+  run replays byte for byte with zero model calls: `RLM.Replay` drives the real
+  engine through `RLM.LLM.Recorded` and `RLM.Policy.Recorded`, so a replay
+  traverses the same code as the run it reproduces rather than a second
+  implementation of the traversal. The trace gained a version subscript, the
+  question, the config, and each call's text — additively, so a v1 trace still
+  reads. A replay refuses when the store has moved, compared through a
+  peek-derived fingerprint that contains no store contents; a mutation no peek
+  can see does not refuse, which is the honest limit and is asserted as one.
+  `RLM.Eval.Arms` enumerates the dimensions a run did not take and scores them
+  from the recorded candidates, at no model cost. `RLM.Eval.Scorecard` runs
+  several policies over one store and reports cost and objective in separate
+  columns, never combined into a ranking. On the separating fixture the LLM
+  policy chooses the same dimension as Greedy and pays one extra call for it
+  (objective 0.100 both, against 0.540 for a deliberately bad control) — a tie,
+  published as one. 265 LLM-free tests.
 - **M4 — `Interop` and `Audit` sources.**
 - **M5 — `rlm-aihub`.** `RLM.LLM.AIHub`, policy hooks, delegating variant.
 
@@ -224,8 +238,9 @@ M0–M3 have no AI Hub dependency and no key beyond an OpenAI-compatible endpoin
 ## 8. Open questions
 
 - **`rlm-core` version floor.** Assumed 2022.1; untested below 2024.1.
-- **Does the LLM beat Greedy?** M3 exists to answer it. Publishing the answer
-  either way is more valuable than the feature.
+- **Does the LLM beat Greedy?** Answered on one fixture in M3: it does not — same
+  dimension, one more call. Open on real stores, which is what the offline
+  harness now makes cheap to ask.
 - **Metric comparability across sources.** A normalized 0–1 split metric lets
   `Greedy` work source-agnostically, but whether fanout entropy and relative
   aggregate spread are _comparably_ scaled is an assumption to test.

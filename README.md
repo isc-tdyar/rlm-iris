@@ -297,9 +297,33 @@ Portable is the default rather than the fallback. See
 - [x] **M1.5** Recursion below the root, bucketed dimensions, Markdown reports,
       scoped runs, readiness refusal
 - [x] **M2** `Global` source (bounded walk, reported caps, allowlist)
-- [ ] **M3** Replay + offline evaluation + `RLM.LLM.Null` CI
+- [x] **M3** Replay + offline evaluation + `RLM.LLM.Null` CI
 - [ ] **M4** `Interop` and `Audit` sources
 - [ ] **M5** `rlm-aihub`
+
+## Does the model beat Greedy?
+
+Not on the fixture. `RLM.Eval.Scorecard` runs the same question over the same
+store under several policies and prints what each cost and how well it divided
+(lower objective is better):
+
+```text
+policy                             calls peeks slices objective  chose
+---------------------------------- ----- ----- ------ ---------  ----------
+RLM.Policy.Greedy                      3     4      2     0.100  region
+RLM.Policy.LLM                         4     0      2     0.100  region
+UnitTest.RLM.PolicyBad                 3     4      2     0.540  channel
+```
+
+The model picks the same dimension Greedy picks and pays a model call to do it.
+The control policy, which maximizes the metric instead of minimizing it, scores
+0.540 — so the scorecard can tell a good division from a bad one, which is what
+makes the tie a result rather than a broken measurement.
+
+One fixture is not a finding about models. It is a harness that produces the
+number offline, from a scripted provider, with no network — so the same question
+can be asked of a real store without a live key. Cost and quality stay in
+separate columns and are never netted into a ranking.
 
 ## License
 
