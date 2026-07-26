@@ -160,4 +160,38 @@ Method TestATraceWithNoFingerprintIsRefused()
     Do $$$AssertTrue($Find(reason, "no store fingerprint") > 0, "for that reason: "_reason)
 }
 
+/// A trace that recorded metadata but no rows names no source class.
+///
+/// The metadata subscripts -- `"c"`, `"fp"`, `"q"`, `"v"` -- sort after the numeric
+/// ones, so a walk looking for the first row with a class name runs off the end of
+/// the rows and lands on one of them. Reading that node as a positional row makes
+/// the "recorded source class" the third field of the config list, which is
+/// `PeekTotal`. Measured: a run that wrote no rows produced "the trace was recorded
+/// against 64 and this store is RLM.Source.Interop", refusing a replay of a trace
+/// that never named a class at all.
+///
+/// The distinction is not cosmetic. "" is the documented "the run wrote no source
+/// class" and skips the check so the fingerprint can answer; a number is a class
+/// name no store will ever match, which turns a silent 64 into a permanent refusal.
+Method TestATraceWithMetadataButNoRowsNamesNoSourceClass()
+{
+    Do ..Record(..Global(), .traceId)
+    // The rows only. The metadata stays, which is the whole point: killing the
+    // subtree would leave nothing for the walk to land on and the bug would hide.
+    Set seq = ""
+    For  {
+        Set seq = $Order(^RLM.Trace(traceId, seq))
+        Quit:seq=""
+        Quit:seq'?1.N
+        Kill ^RLM.Trace(traceId, seq)
+        Set seq = ""
+    }
+    Do $$$AssertTrue($Data(^RLM.Trace(traceId, "c")), "the config metadata is still there")
+    Do $$$AssertNotTrue($Data(^RLM.Trace(traceId, 1)), "and the rows are gone")
+
+    Set replay = ##class(RLM.Replay).%New(..Global(), traceId)
+    Do $$$AssertTrue(replay.Verify(.reason), "the class check does not invent a class: "_reason)
+    Do $$$AssertEquals($Find(reason, "recorded against"), 0, "so no mismatch is reported: "_reason)
+}
+
 }

@@ -108,16 +108,24 @@ Method Verify(Output reason As %String) As %Boolean
 }
 
 /// The source class the run recorded, from its first row, or "" if it wrote none.
+///
+/// The non-numeric subscripts are metadata, not rows, and they sort after the
+/// numeric ones. Leaving the walk on one of them must yield "" -- reading its value
+/// as a positional row makes `$List(row, 3)` the third field of whatever that node
+/// happens to hold. Measured: a run that recorded no rows at all left the walk on
+/// `"c"`, the config list, whose third field is `PeekTotal`, and Verify refused the
+/// replay with "the trace was recorded against 64". A wrong class name is worse than
+/// no class name, because "" is the documented "wrote none" and skips the check.
 Method RecordedSourceClass() As %String [ Private ]
 {
-    Set seq = ""
+    Set seq = "", found = ""
     For  {
         Set seq = $Order(^RLM.Trace(..RunId, seq), 1, row)
         Quit:seq=""
         Quit:seq'?1.N
-        If $List(row, 3) '= "" { Quit }
+        If $ListValid(row), $List(row, 3) '= "" { Set found = $List(row, 3)  Quit }
     }
-    Quit $Select(seq="":"", 1:$List(row, 3))
+    Quit found
 }
 
 /// Replay the run and write the report to `report`.

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+  <Document name="rlm-aihub.ZPM">
+    <Module>
+      <Name>rlm-aihub</Name>
+      <Description>AI Hub support for rlm-core: an RLM.LLM provider built on %AI.Provider.ChatComplete, so a decomposition runs through the provider an IRIS instance already has configured — no URL, no bearer token, no SSL configuration from the caller — and under the instance's own authorization and audit policies. Requires an IRIS with %AI.*; rlm-core itself needs none of it. Built on ChatComplete rather than %AI.Agent because the design is one bounded round-trip per decision and an agent tool loop is neither budgeted nor replayable.</Description>
+      <Version>0.0.1</Version>
+      <Author>
+        <Person>Thomas Dyar</Person>
+        <Organization>InterSystems</Organization>
+        <License>MIT</License>
+      </Author>
+      <Packaging>module</Packaging>
+      <SourcesRoot>src</SourcesRoot>
+      <Resource Name="RLMAIHub.PKG"/>
+      <Keywords>rlm,recursive-language-model,llm,ai-hub,objectscript</Keywords>
+      <Dependencies>
+        <ModuleReference>
+          <Name>rlm-core</Name>
+          <Version>0.0.1</Version>
+        </ModuleReference>
+      </Dependencies>
+      <UnitTest Name="/src/UnitTest/RLMAIHub" Package="UnitTest.RLMAIHub" Phase="test"/>
+    </Module>
+  </Document>
+</Export>

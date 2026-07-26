@@ -191,4 +191,46 @@ Method TestNoCandidatesIsADeclineNotAnError()
     Do $$$AssertEquals(d.PeeksSpent, 0, "and it cost nothing to find out")
 }
 
+/// A dimension whose children are all empty is unscoreable, not a `<DIVIDE>`.
+///
+/// The n-weighted mean divides by the summed child count, and a derived dimension
+/// offers its whole menu whether or not anything landed in it: `RLM.Source.Interop`
+/// advertises 24 hours over a six-message extent. Found end to end, on a real store,
+/// where the throw surfaced only as "The analysis stopped early: <DIVIDE>." in the
+/// report -- a whole run lost to three empty buckets.
+///
+/// Excluded rather than scored 0, because 0 is the best possible split metric and
+/// would make the emptiest dimension win every time.
+Method TestAllEmptyChildrenExcludeTheCandidateRatherThanDividingByZero()
+{
+    Set store = ##class(UnitTest.RLM.FixtureEmptyChildren).%New()
+    Set policy = ##class(RLM.Policy.Greedy).%New()
+    Set d = policy.ChooseSplit(store, store.Peek(""), $ListBuild("hour"),
+        ##class(RLM.Budget).%New(8))
+    Do $$$AssertEquals(d.Dimension, "", "no dimension earned the split")
+    Do $$$AssertEquals(d.Candidates.Count(), 1, "the candidate is still on the record")
+    Set c = d.Candidates.GetAt(1)
+    Do $$$AssertEquals(c.Score, "", "with no score, because none can be computed")
+    Do $$$AssertTrue($Find($ZConvert(c.Error, "U"), "EMPTY") > 0, "and it says why: "_c.Error)
+    Do $$$AssertEquals(c.Sampled, 3, "having actually sampled all three children")
+}
+
+/// The same store through the engine: a report, not a `<DIVIDE>` caveat.
+///
+/// The unit test above proves the arithmetic; this proves the consequence. A throw
+/// out of ChooseSplit is caught by `RLM.Engine.Run` and rendered as "The analysis
+/// stopped early", which loses the entire run -- so the engine-level assertion is
+/// the one that matches how the bug was actually seen.
+Method TestAnEmptyChildDimensionDoesNotStopTheRun()
+{
+    Set store = ##class(UnitTest.RLM.FixtureEmptyChildren).%New()
+    Set engine = ##class(RLM.Engine).%New(store,
+        ##class(RLM.LLM.Null).%New($ListBuild("divide by hour", "an answer")),
+        ##class(RLM.Budget).%New(8), ##class(RLM.Policy.Greedy).%New())
+    Set doc = engine.Run("how does this store divide?")
+    Do $$$AssertEquals($Find(doc, "stopped early"), 0, "the run was not aborted")
+    Do $$$AssertEquals($Find(doc, "DIVIDE"), 0, "and no arithmetic error reached the report")
+    Do $$$AssertTrue($Find(doc, "Question") > 0, "a real report came back")
+}
+
 }

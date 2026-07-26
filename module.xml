@@ -14,7 +14,10 @@
       <SourcesRoot>src</SourcesRoot>
       <Resource Name="RLM.PKG"/>
       <Keywords>rlm,recursive-language-model,llm,globals,long-context,analytics,agent,objectscript</Keywords>
-      <UnitTest Name="/src/UnitTest" Package="UnitTest.RLM" Phase="test"/>
+      <!-- /src/UnitTest/RLM, not /src/UnitTest: the sibling UnitTest/RLMAIHub tree
+           belongs to rlm-aihub and names %AI.* classes, which are absent on the
+           base IRIS this module is meant to install on. -->
+      <UnitTest Name="/src/UnitTest/RLM" Package="UnitTest.RLM" Phase="test"/>
     </Module>
   </Document>
 </Export>

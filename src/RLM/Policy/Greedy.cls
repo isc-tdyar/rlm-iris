@@ -98,6 +98,16 @@ Method ChooseSplit(
             If c.Error = "" { Set c.Error = "fewer than two children could be scored" }
             Continue
         }
+        // Two children can be scored and still hold no rows between them. A derived
+        // dimension emits a fixed menu -- `hour` offers 24 buckets whether or not
+        // any message landed in them -- so a small extent scores several empty
+        // slices, and an n-weighted mean over them divides by zero. Reported as an
+        // unscoreable candidate rather than as a score, because "every child was
+        // empty" is a fact about this dimension and 0 would read as a perfect split.
+        If sumN = 0 {
+            Set c.Error = "every sampled child was empty, so the split cannot be scored"
+            Continue
+        }
         Set score = sumWeighted / sumN
         Set c.Score = score
         If (bestScore = "") || (score < bestScore) {
