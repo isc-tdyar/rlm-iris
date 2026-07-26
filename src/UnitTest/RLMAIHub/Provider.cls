@@ -136,4 +136,134 @@ Method TestAbsentUsageLeavesTheCountsEmptyRatherThanZero()
     Do $$$AssertEquals(p.LastCompletionTokens, "", "and an unreported completion count")
 }
 
+// --- Phase 3: a failure costs one slot, not the report (US2) -----------------
+
+/// A throwing provider becomes a status, not an exception.
+///
+/// `%AI.*` signals failure by throwing; `RLM.LLM`'s contract is "" plus a status.
+/// The difference decides who absorbs an outage: a throw unwinds through
+/// `RLM.Engine.Run`'s Catch and the whole run is reduced to "The analysis stopped
+/// early", while a status costs the run one sub-call it then discloses.
+Method TestAThrowingProviderIsAStatusAndNotAnException()
+{
+    Set p = ..Wire($ListBuild("never reached"), .stub)
+    Set stub.ThrowOnCall = 1
+    Set threw = 0
+    Try {
+        Set out = p.Complete("i", "p", .sc)
+    } Catch {
+        Set threw = 1
+    }
+    Do $$$AssertEquals(threw, 0, "Complete did not throw")
+    Do $$$AssertStatusNotOK(sc, "it reported a status instead")
+    Do $$$AssertEquals($Get(out), "", "and returned no text")
+    Set text = $System.Status.GetErrorText(sc)
+    Do $$$AssertTrue($Find(text, "stub") > 0, "naming the provider: "_text)
+    Do $$$AssertTrue($Find(text, "failed") > 0, "and that it failed: "_text)
+}
+
+/// An empty completion is a failure, not an empty answer.
+///
+/// A provider can return a 200 with nothing in it. Passed through, the engine writes
+/// an empty sub-call answer into the report and the reader sees a heading with
+/// nothing under it -- indistinguishable from a slice that genuinely had nothing to
+/// say. Refusing makes the difference visible.
+Method TestAnEmptyCompletionIsARefusalNotAnAnswer()
+{
+    Set p = ..Wire($ListBuild(""), .stub)
+    Set out = p.Complete("i", "p", .sc)
+    Do $$$AssertStatusNotOK(sc, "an empty completion is refused")
+    Do $$$AssertEquals(out, "", "and no text is returned")
+    Do $$$AssertTrue($Find($System.Status.GetErrorText(sc), "empty") > 0, "for that reason")
+}
+
+/// A provider that returns nothing at all is refused rather than dereferenced.
+///
+/// Defensive on purpose: `ChatComplete` is declared to return `%AI.LLM.Response`, and
+/// a nonconforming override or a future platform change returning "" would otherwise
+/// be an `<INVALID OREF>` -- a throw, which is the one thing this class promises not
+/// to do.
+Method TestANonObjectResponseIsRefusedRatherThanDereferenced()
+{
+    Set p = ..Wire($ListBuild("ok"), .stub)
+    Set stub.ReturnNothing = 1
+    Set threw = 0
+    Try {
+        Set out = p.Complete("i", "p", .sc)
+    } Catch {
+        Set threw = 1
+    }
+    Do $$$AssertEquals(threw, 0, "Complete still did not throw")
+    Do $$$AssertStatusNotOK(sc, "and refused")
+    Do $$$AssertEquals($Get(out), "", "returning no text")
+}
+
+// --- Phase 4: truncation is refused without a finish reason (US3) ------------
+
+/// A completion that reached the ceiling is refused, and its partial text withheld.
+///
+/// `%AI.LLM.Response` carries no finish reason -- `FromJSON` reads `content`, `usage`
+/// and `tool_calls` and nothing else -- so `RLM.LLM.REST`'s `finish_reason = "length"`
+/// refusal has no direct equivalent. Truncation is inferred from the reported
+/// completion count reaching the requested limit.
+///
+/// The text is withheld rather than returned alongside the error, because a caller
+/// that ignored the status would otherwise put half a sentence into a report as a
+/// finding.
+Method TestACompletionAtTheTokenCeilingIsRefused()
+{
+    Set p = ..Wire($ListBuild("the first half of a sentence that never fin"), .stub)
+    Set p.MaxTokens = 16
+    Set stub.UsageJSON = "{""prompt_tokens"":40,""completion_tokens"":16}"
+    Set out = p.Complete("i", "p", .sc)
+    Do $$$AssertStatusNotOK(sc, "a completion at the ceiling is refused")
+    Do $$$AssertEquals(out, "", "and the partial text is not returned")
+    Do $$$AssertTrue($Find($System.Status.GetErrorText(sc), "cut off") > 0, "naming truncation")
+}
+
+/// One token below the ceiling succeeds.
+///
+/// The other half of the previous assertion, and the one that keeps the proxy honest:
+/// a check that refused everything would pass the test above and be useless. This
+/// pins the boundary at `>=` rather than somewhere lower.
+Method TestOneTokenBelowTheCeilingSucceeds()
+{
+    Set p = ..Wire($ListBuild("a complete answer"), .stub)
+    Set p.MaxTokens = 16
+    Set stub.UsageJSON = "{""prompt_tokens"":40,""completion_tokens"":15}"
+    Set out = p.Complete("i", "p", .sc)
+    Do $$$AssertStatusOK(sc, "one token below the ceiling is not truncation")
+    Do $$$AssertEquals(out, "a complete answer", "and the text comes back")
+}
+
+/// With no ceiling requested, no truncation check runs.
+///
+/// A run that set no limit cannot have been truncated by one, and inventing a
+/// comparison against an empty `MaxTokens` would refuse every call.
+Method TestNoTokenCeilingMeansNoTruncationCheck()
+{
+    Set p = ..Wire($ListBuild("an answer of whatever length"), .stub)
+    Set p.MaxTokens = ""
+    Set stub.UsageJSON = "{""prompt_tokens"":40,""completion_tokens"":9999}"
+    Set out = p.Complete("i", "p", .sc)
+    Do $$$AssertStatusOK(sc, "no ceiling means no truncation check")
+    Do $$$AssertEquals(out, "an answer of whatever length", "and the text comes back")
+}
+
+/// Absent usage is not evidence of truncation.
+///
+/// A provider is entitled to report no usage at all. Treating the resulting empty
+/// count as "reached the limit" would refuse every completion from every provider
+/// that does not report tokens -- a refusal with no measurement behind it, which is
+/// Constitution III inverted: a cap claimed where none was observed.
+Method TestAbsentUsageIsNotReadAsTruncation()
+{
+    Set p = ..Wire($ListBuild("a complete answer"), .stub)
+    Set p.MaxTokens = 16
+    Set stub.UsageJSON = ""
+    Set out = p.Complete("i", "p", .sc)
+    Do $$$AssertStatusOK(sc, "a provider that reports no usage is not refused")
+    Do $$$AssertEquals(out, "a complete answer", "and its text comes back")
+}
+
 }

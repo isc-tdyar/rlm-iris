@@ -24,6 +24,11 @@ Property ThrowOnCall As %Integer [ InitialExpression = 0 ];
 /// which a provider is entitled to do, and which must not read as truncation.
 Property UsageJSON As %String;
 
+/// Return "" instead of a response object. Nothing in the platform promises this
+/// cannot happen, and the consequence in the caller is an `<INVALID OREF>` -- a
+/// throw, which is the one thing `RLMAIHub.Provider` promises not to do.
+Property ReturnNothing As %Boolean [ InitialExpression = 0 ];
+
 Property Calls As %Integer [ InitialExpression = 0 ];
 
 /// The arguments of each call, so the request can be asserted on.
@@ -66,6 +71,8 @@ Method ChatComplete(
     If ..Calls > $ListLength(..Script) {
         Throw ##class(%Exception.General).%New("stub script exhausted", 5001, , "call "_..Calls_" was not anticipated by a "_$ListLength(..Script)_"-reply script")
     }
+
+    If ..ReturnNothing { Quit "" }
 
     Set obj = {"content": ($List(..Script, ..Calls))}
     If ..UsageJSON '= "" { Set obj.usage = {}.%FromJSON(..UsageJSON) }

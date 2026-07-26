@@ -17,9 +17,9 @@ bounded by the number of slices it inspects, not by the size of the store.
 Every existing RLM implementation — `rlms`, `dspy.RLM`, the Google ADK port,
 `recursive-llm` — begins by loading context into its own process as a Python
 REPL variable. That is a fine design for a Markdown dump and an impossible one
-for a 400M-row `Ens.MessageHeader` under an SLA, a PHI-bearing clinical table, or
-an undocumented global with no schema at all. WordLift's RLM-on-KG is the only
-prior art with a non-text environment (GraphQL over RDF), and it is still a
+for a 400M-row `Ens.MessageHeader` under an SLA, a PHI-bearing clinical table,
+or an undocumented global with no schema at all. WordLift's RLM-on-KG is the
+only prior art with a non-text environment (GraphQL over RDF), and it is still a
 retrieval surface rather than the system of record.
 
 Two consequences follow, and they are the package's reason to exist:
@@ -60,8 +60,8 @@ RLM.Policy           abstract: ChooseSplit(peek, candidates) -> dim
 RLM.LLM              abstract: Complete(instructions, prompt) -> text
   .REST              %Net.HttpRequest -> OpenAI-compatible endpoint
   .Python            $SYSTEM.Python + provider SDK
-  .AIHub             %AI.Agent.Chat()
   .Null              deterministic stub
+RLMAIHub.Provider    %AI.Provider.ChatComplete()  (separate package, rlm-aihub)
 
 RLM.Engine           recursion; depends on RLM.Source + RLM.LLM + RLM.Policy only
 ```
@@ -71,20 +71,50 @@ be abstract is `RLM.LLM`, because every call in the design is a single
 round-trip with all evidence pre-computed: no tool loop, no function calling, no
 streaming. A plain HTTPS POST satisfies the contract completely.
 
+**The AI Hub provider is `%AI.Provider.ChatComplete`, not `%AI.Agent.Chat`.** An
+earlier draft of this spec named `RLM.LLM.AIHub` over `%AI.Agent.Chat()`; that
+was wrong on both counts. `%AI.Agent` maintains a session and runs a tool loop
+whose `MaxIterations` defaults to 10, so building on it would break the two
+things the design most depends on. Budget accounting: the engine charges one
+slot per decision while the provider spends up to ten, and the budget line in
+every report becomes fiction. Replay: an agent's trajectory depends on tool
+results rather than only on the frozen store, so a trace plus the store would no
+longer be everything a run was. `ChatComplete` is stateless and single-shot,
+which is the `RLM.LLM` contract exactly. `UnitTest.RLMAIHub.EndToEndAIHub` pins
+both by asserting an AI Hub run's document is byte-identical to the same run
+through `RLM.LLM.Null` and its call count exactly equal.
+
+The class also sits in its own `RLMAIHub` package rather than under `RLM.LLM`,
+because IPM's `<Resource Name="RLM.PKG"/>` is recursive: a subpackage of `RLM`
+would drag `%AI.*` into `rlm-core`'s own manifest.
+
 ### 3.1 Two IPM modules, not one with a flag
 
-- **`rlm-core`** — everything above except `RLM.LLM.AIHub`. No `%AI.*`
-  dependency. Target floor IRIS 2022.1 (**unverified below 2024.1** — `%Net.HttpRequest`
-  TLS config and `%DynamicObject` behavior need testing on the older builds
-  before the floor is published).
-- **`rlm-aihub`** — depends on `rlm-core`; adds `RLM.LLM.AIHub`, policy hooks,
-  and the delegating engine variant.
+- **`rlm-core`** (`module.xml`) — the whole engine, sources, policies, trace
+  and replay. No `%AI.*` dependency. Target floor IRIS 2022.1 (**unverified
+  below 2024.1** — `%Net.HttpRequest` TLS config and `%DynamicObject` behavior
+  need testing on the older builds before the floor is published).
+- **`rlm-aihub`** (`module-aihub.xml`) — depends on `rlm-core`; adds the
+  `RLMAIHub` package, which is `RLMAIHub.Provider` and nothing else. Requires
+  2026.3AI.
+
+The dependency runs one way and is asserted rather than assumed:
+`UnitTest.RLMAIHub.Manifests` reads both manifests and checks that `rlm-core`'s
+resources do not overlap `rlm-aihub`'s and that `rlm-core` never names it. Both
+checks strip comments first — an explanatory XML comment in `module.xml` that
+mentions `rlm-aihub` failed the test once, and a comment cannot drag a module
+anywhere, only a `<Dependency>` or a `<Resource>` can.
 
 A single module cannot express "requires 2026.3" conditionally, and `zpm load`
-failing at compile time on a missing `%AI.Agent` is the worst possible OEX first
-impression. Portable is the **default**; AI Hub is the upgrade. If the polarity
-were reversed the abstraction would rot — someone would reach for `%AI.Policy`
-inside the engine within a month.
+failing at compile time on a missing `%AI.Provider` is the worst possible OEX
+first impression. Portable is the **default**; AI Hub is the upgrade. If the
+polarity were reversed the abstraction would rot — someone would reach for
+`%AI.Policy` inside the engine within a month.
+
+One `src/` tree still serves both containers.
+`$System.OBJ.LoadDir(..., "ck", , 1)` skips a class whose superclass is missing
+and continues, so on base IRIS it reports `Skipping class RLMAIHub.Provider` and
+the other 306 tests compile and run green.
 
 ## 4. `RLM.Source` contract
 
@@ -96,9 +126,9 @@ self-labelling metric lines for the prompt.
 Two invariants every source must hold:
 
 **The model never authors a predicate.** `Peek()` enumerates children; the model
-selects a token from that enumeration; `RLM.Slice.Resolve()` refuses anything not
-returned by the previous peek. There is no injection surface to reason about,
-because the model's action space is a legal-move list.
+selects a token from that enumeration; `RLM.Slice.Resolve()` refuses anything
+not returned by the previous peek. There is no injection surface to reason
+about, because the model's action space is a legal-move list.
 
 **Caps are reported, never hidden.** A bounded walk that returns
 `"counted 50,000 nodes (capped); subtree is larger"` is useful; one that returns
@@ -117,10 +147,10 @@ article to its first 15K characters and reported nothing.
 | 4   | `Audit`   | Governance is the point; exporting defeats it              |
 
 `Global` ships first: strongest differentiator, no prior art, and the store
-genuinely cannot fit in any context window. Its peek returns child count (capped),
-depth reached, distinct subscripts at the next level with the top few by fanout,
-data-node vs pointer-node ratio, value length mean/sd, subscript type mix
-(canonical numeric / string / `$LB`-looking), and a value-shape sample —
+genuinely cannot fit in any context window. Its peek returns child count
+(capped), depth reached, distinct subscripts at the next level with the top few
+by fanout, data-node vs pointer-node ratio, value length mean/sd, subscript type
+mix (canonical numeric / string / `$LB`-looking), and a value-shape sample —
 roughly 500 characters whether the subtree holds 40 nodes or 400 million.
 
 Global access is **read-only against a fail-closed allowlist**: `^$GLOBAL`
@@ -147,10 +177,10 @@ knowing what the store is.
 ```
 
 `role` (`root_decision` / `subagent_peek` / `reduce`) exists because of a real
-defect in the Gaia prototype: sub-agent sub-peeks were recorded in the same trace
-as root delegations, so a 6-slice plan emitted 8 lines and read as a budget
-violation. Budget accounting is correct by construction with the discriminator
-and requires a retrofit without it.
+defect in the Gaia prototype: sub-agent sub-peeks were recorded in the same
+trace as root delegations, so a 6-slice plan emitted 8 lines and read as a
+budget violation. Budget accounting is correct by construction with the
+discriminator and requires a retrofit without it.
 
 **A peek is a pure function of the store.** Given a frozen store, a slice key
 resolves to the same aggregates every time — so trajectories replay with no
@@ -176,26 +206,49 @@ above. The constraint buys the evaluation story.
 
 Designed so each AI Hub addition **replaces an internal, not an interface**:
 
-| AI Hub addition                | What we do now                           | On arrival                                                            |
-| ------------------------------ | ---------------------------------------- | --------------------------------------------------------------------- |
-| `%AI.Context.Store` offloading | Peeks already bounded; no offload needed | `RLM.Source` results become handles; engine unchanged                 |
-| Tool-result `Offload` mode     | N/A — we never return raw rows           | Opt in for `Describe()` output                                        |
-| LID observation renderer       | `Describe()` is already canonical        | Delegate to it, keep `Describe()` as fallback                         |
-| Scope-reduction invariant      | Depth cap + budget in `RLM.Budget`       | Adopt in the `rlm-aihub` delegating variant                           |
-| Parallel `%AI.Op.Map`          | Sequential recursion                     | Parallel fan-out in `rlm-aihub`. **Blocked on ai-hub-eap#26** (below) |
-| Trainability / `%AI.Env`       | `RLM.Trace` + replay                     | Export adapter; trace format already sufficient                       |
-| Core trajectory record         | `RLM.Trace`                              | Map onto it if it carries an extensible metric bag; else keep ours    |
+| AI Hub addition                | What we do now                           | On arrival                                                          |
+| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------- |
+| `%AI.Context.Store` offloading | Peeks already bounded; no offload needed | `RLM.Source` results become handles; engine unchanged               |
+| Tool-result `Offload` mode     | N/A — we never return raw rows           | Opt in for `Describe()` output                                      |
+| LID observation renderer       | `Describe()` is already canonical        | Delegate to it, keep `Describe()` as fallback                       |
+| Scope-reduction invariant      | Depth cap + budget in `RLM.Budget`       | Adopt in the `rlm-aihub` delegating variant                         |
+| Parallel `%AI.Op.Map`          | Sequential recursion                     | Parallel fan-out in `rlm-aihub`. **Still blocked on ai-hub-eap#26** |
+| Trainability / `%AI.Env`       | `RLM.Trace` + replay                     | Export adapter; trace format already sufficient                     |
+| Core trajectory record         | `RLM.Trace`                              | Map onto it if it carries an extensible metric bag; else keep ours  |
 
 **ai-hub-eap#26**: on 2026.3.0AI Build 126U a `%AI.Tool` that spawns a child
 agent never returns when the parent's own loop dispatches it — and only when the
 child has tools attached. It also leaks license slots. Any engine-managed
 parallel fan-out in `rlm-aihub` waits on that fix; `rlm-core` is unaffected
-because it recurses in ObjectScript.
+because it recurses in ObjectScript. Re-confirmed on Build 126U while building
+M5.
+
+**`%AI.LLM.Response` carries no finish reason.** `FromJSON` reads `content`, `usage`
+and `tool_calls` and nothing else, so `RLM.LLM.REST`'s refusal of a completion
+whose `finish_reason` is `length` has no direct equivalent. `RLMAIHub.Provider`
+infers truncation from the reported `completion_tokens` reaching the requested
+`MaxTokens`. The proxy over-refuses — a completion that legally ends on the
+limit is rejected — and that is the correct direction under Principle III: a
+false refusal is disclosed in the report and costs one slot, while a false
+acceptance puts half a sentence into a report as a finding. Both figures must be
+known: no `MaxTokens` means no check, and a provider that reports no usage is
+not thereby evidence of truncation. A finish reason on `%AI.LLM.Response` would
+let the proxy be deleted.
+
+Two other measured facts about the surface, both of which shaped the class.
+`%AI.Provider.Create("openai", {"api_key": "sk-not-a-real-key"})` succeeds and
+`GetCapabilities()` returns the full list, so construction proves nothing about
+readiness — which is why `Ready()` is a separate question. And
+`GetCapabilities()` on an unresolvable provider throws
+`<%AICore>ProviderNotFound` while `HasCapability()` returns a plain 0, so
+`Ready()` reads the capability list inside a `Try` rather than calling
+`HasCapability`: a bare false conflates "this provider cannot chat" with "nobody
+could tell me".
 
 The seam that makes all of this cheap is that `RLM.Engine` depends on three
 abstractions and no framework. If AI Hub's primitives arrive in a different
-shape than the harness spec proposes, the blast radius is `RLM.LLM.AIHub` and
-`rlm-aihub` — not the engine, not the sources, not the trace.
+shape than the harness spec proposes, the blast radius is `RLMAIHub.Provider` —
+not the engine, not the sources, not the trace.
 
 ## 7. Milestones
 
@@ -250,7 +303,35 @@ shape than the harness spec proposes, the blast radius is `RLM.LLM.AIHub` and
   `RLM.Source.Table` was deliberately not re-parented onto the shared base: it
   is shipped and its output is asserted byte for byte by the Gaia port tests,
   and the duplication is the price. 300 LLM-free tests.
-- **M5 — `rlm-aihub`.** `RLM.LLM.AIHub`, policy hooks, delegating variant.
+- **M5 — `rlm-aihub`. Shipped.** `RLMAIHub.Provider` over
+  `%AI.Provider.ChatComplete`, a second IPM manifest, and the instance's
+  authorization and audit policies wired in as optional seams. A run needs a
+  provider name and a model; no URL, no key, no SSL configuration, asserted by
+  reading the class source for the absent properties. The gate was to run the
+  _existing_ suite on a second IRIS build, and it earned its keep: it surfaced
+  two latent `rlm-core` defects that reproduced on both images. A derived
+  dimension's fixed menu — `hour` offers 24 buckets whether or not any row
+  landed in them — divided by zero in `RLM.Policy.Greedy` over a small extent
+  and cost the whole run, disclosing only `<DIVIDE>`; the candidate is now
+  excluded with a reason rather than scored 0, since 0 is the best possible
+  metric and would make the emptiest dimension win every time. And
+  `RLM.Replay.RecordedSourceClass` walked off the end of the rows onto a
+  metadata node and read `PeekTotal` as a class name, refusing replays of traces
+  that never named one. 341 LLM-free tests: 306 in `RLM` on both containers, 35
+  in `RLMAIHub`.
+
+  `UnitTest.RLM.Portability` was added with it, because the milestone introduced
+  a real `%AI.*` dependency into the repository for the first time and the only
+  thing keeping it out of `rlm-core` was a package boundary nobody is forced to
+  respect. It walks every compiled `RLM.*` class and asserts no `%AI.*` in a
+  method body, a property type, a superclass or a signature. The property case is
+  the one that would arrive silently: `Property X As %AI.Policy.Audit` puts no
+  text in any method, compiles to `ERROR #5373` on a customer's 2026.1, and takes
+  the whole class with it.
+
+  Not delivered: the delegating engine variant and parallel fan-out, both still
+  blocked on ai-hub-eap#26, and truncation remains a token-count proxy rather
+  than a finish reason.
 
 M0–M4 have no AI Hub dependency and no key beyond an OpenAI-compatible endpoint.
 

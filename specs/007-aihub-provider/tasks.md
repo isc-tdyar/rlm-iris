@@ -3,8 +3,8 @@
 **Branch**: `007-aihub-provider` | **Spec**: [spec.md](spec.md) |
 **Plan**: [plan.md](plan.md)
 
-Test-first within every phase. Each phase ends with an end-to-end test that gates
-the next. Baseline before this milestone: **300 passed / 0 failed** on the
+Test-first within every phase. Each phase ends with an end-to-end test that
+gates the next. Baseline before this milestone: **300 passed / 0 failed** on the
 portable `rlm-iris` container.
 
 Two containers are in play, and every phase gate runs in both:
@@ -73,82 +73,82 @@ exists.
 
 ## Phase 3 — A failure costs one slot, not the report (US2)
 
-- [ ] T017 Add to `src/UnitTest/RLMAIHub/StubProvider.cls` a mode that throws on
+- [x] T017 Add to `src/UnitTest/RLMAIHub/StubProvider.cls` a mode that throws on
       a nominated call index
-- [ ] T018 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that a throwing
+- [x] T018 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that a throwing
       provider makes `Complete` return `""` with an error status naming the
       provider failure, and that `Complete` itself does not throw (FR3)
-- [ ] T019 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that an empty
+- [x] T019 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that an empty
       `Content` is an error status, not an empty answer (FR4)
-- [ ] T020 Implement the `Try`/`Catch` conversion and the empty-content refusal
+- [x] T020 Implement the `Try`/`Catch` conversion and the empty-content refusal
       in `src/RLMAIHub/Provider.cls`
-- [ ] T021 Add to `src/UnitTest/RLMAIHub/EndToEndAIHub.cls` a test that a run
+- [x] T021 Add to `src/UnitTest/RLMAIHub/EndToEndAIHub.cls` a test that a run
       whose second call throws still produces a report, discloses the failure,
       and shows the slot spent in the budget
-- [ ] T022 **Phase gate**: full suite in both containers
+- [x] T022 **Phase gate**: full suite in both containers
 
 ## Phase 4 — Truncation is refused without a finish reason (US3)
 
-- [ ] T023 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that a response
+- [x] T023 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that a response
       whose `completion_tokens` equals `MaxTokens` is an error status naming
       truncation, and the partial text is not returned
-- [ ] T024 [P] Add the boundary test: `completion_tokens` one below `MaxTokens`
+- [x] T024 [P] Add the boundary test: `completion_tokens` one below `MaxTokens`
       succeeds and returns the text — the proxy must not refuse everything
-- [ ] T025 [P] Add a test that with no `MaxTokens` set, no truncation check runs
+- [x] T025 [P] Add a test that with no `MaxTokens` set, no truncation check runs
       and no false refusal occurs
-- [ ] T026 [P] Add a test that a response with no `usage` object at all
+- [x] T026 [P] Add a test that a response with no `usage` object at all
       succeeds — absent usage is not evidence of truncation
-- [ ] T027 Implement the truncation inference in `src/RLMAIHub/Provider.cls`,
+- [x] T027 Implement the truncation inference in `src/RLMAIHub/Provider.cls`,
       with a comment recording that the platform exposes no finish reason and why
       over-refusing is the correct direction of error
-- [ ] T028 **Phase gate**: full suite in both containers
+- [x] T028 **Phase gate**: full suite in both containers
 
 ## Phase 5 — The instance's policy governs the call (US5)
 
-- [ ] T029 Create `src/UnitTest/RLMAIHub/StubAudit.cls` extending
+- [x] T029 Create `src/UnitTest/RLMAIHub/StubAudit.cls` extending
       `%AI.Policy.Audit`, recording each `%LogExecution` call
-- [ ] T030 [P] Create `src/UnitTest/RLMAIHub/StubAuth.cls` extending
+- [x] T030 [P] Create `src/UnitTest/RLMAIHub/StubAuth.cls` extending
       `%AI.Policy.Authorization`, with a refuse mode and a throw mode
-- [ ] T031 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that an
+- [x] T031 [P] Add to `src/UnitTest/RLMAIHub/Provider.cls` a test that an
       attached audit policy receives the call with its duration and status
-- [ ] T032 [P] Add a test that an audit policy is passed no prompt or completion
+- [x] T032 [P] Add a test that an audit policy is passed no prompt or completion
       text beyond what the run already discloses — Principle I applies to the
       policy seam too
-- [ ] T033 [P] Add a test that a refusing authorization policy makes `Complete`
+- [x] T033 [P] Add a test that a refusing authorization policy makes `Complete`
       return `""` with a status naming the refusal
-- [ ] T034 [P] Add a test that a policy which itself throws is converted to a
+- [x] T034 [P] Add a test that a policy which itself throws is converted to a
       status like any other failure
-- [ ] T035 [P] Add a test that absent policies change nothing — same result as
+- [x] T035 [P] Add a test that absent policies change nothing — same result as
       Phase 2's baseline call (FR10)
-- [ ] T036 Implement `AuthPolicy` / `AuditPolicy` consultation in
+- [x] T036 Implement `AuthPolicy` / `AuditPolicy` consultation in
       `src/RLMAIHub/Provider.cls`
-- [ ] T037 Add to `src/UnitTest/RLMAIHub/EndToEndAIHub.cls` a run under a
+- [x] T037 Add to `src/UnitTest/RLMAIHub/EndToEndAIHub.cls` a run under a
       refusing policy, asserting the report discloses the refusal rather than
       omitting the slice
-- [ ] T038 **Phase gate**: full suite in both containers
+- [x] T038 **Phase gate**: full suite in both containers
 
 ## Phase 6 — Docs and the milestone gate
 
-- [ ] T039 Write `specs/007-aihub-provider/quickstart.md` with the figures the
+- [x] T039 Write `specs/007-aihub-provider/quickstart.md` with the figures the
       code actually printed, not invented ones
-- [ ] T040 [P] Update `docs/SPEC.md` §3 architecture block: the AI Hub provider
+- [x] T040 [P] Update `docs/SPEC.md` §3 architecture block: the AI Hub provider
       is `RLMAIHub.Provider` over `%AI.Provider.ChatComplete`, not
       `RLM.LLM.AIHub` over `%AI.Agent.Chat()` — and say why the agent path was
       rejected
-- [ ] T041 [P] Update `docs/SPEC.md` §3.1 to name `module-aihub.xml` and the
+- [x] T041 [P] Update `docs/SPEC.md` §3.1 to name `module-aihub.xml` and the
       `RLMAIHub` package, recording that IPM's package resource is recursive
-- [ ] T042 [P] Update `docs/SPEC.md` §6: mark the parallel fan-out row still
+- [x] T042 [P] Update `docs/SPEC.md` §6: mark the parallel fan-out row still
       blocked on ai-hub-eap#26, and record that `%AI.LLM.Response` carries no
       finish reason
-- [ ] T043 [P] Update `docs/SPEC.md` §7 M5 bullet to "Shipped" with an account of
+- [x] T043 [P] Update `docs/SPEC.md` §7 M5 bullet to "Shipped" with an account of
       what landed and what did not
-- [ ] T044 [P] Check off `- [x] **M5** \`rlm-aihub\``in`README.md`, and check
+- [x] T044 [P] Check off `- [x] **M5** \`rlm-aihub\``in`README.md`, and check
       off M1–M4 which are shipped but still unchecked there
-- [ ] T045 [P] Update `README.md`'s Portability section: `rlm-aihub` supplies a
+- [x] T045 [P] Update `README.md`'s Portability section: `rlm-aihub` supplies a
       provider, and the engine gained no `%AI.` reference
-- [ ] T046 Run `markdownlint-cli2 --fix` and `prettier --write` on every `.md`
+- [x] T046 Run `markdownlint-cli2 --fix` and `prettier --write` on every `.md`
       touched, then re-lint to confirm zero errors
-- [ ] T047 **Milestone gate**: full suite green in both containers; the portable
+- [x] T047 **Milestone gate**: full suite green in both containers; the portable
       run at 300+ with no prior test edited; commit
 
 ## Dependencies

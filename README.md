@@ -22,15 +22,15 @@ Set eng = ##class(RLM.Engine).%New(src, ##class(RLM.LLM.REST).%New())
 Write eng.Run("What drives order value, and where is it skewed?", .traceId)
 ```
 
-`Run` returns the report text and sets `traceId`, which identifies the trace rows
-the run wrote.
+`Run` returns the report text and sets `traceId`, which identifies the trace
+rows the run wrote.
 
 ## A walkthrough: the global nobody can explain
 
 Every long-lived IRIS site has one. `^JRNAUD` in a namespace nobody owns, 40 GB
 on disk, written to by a routine last edited in 2009 by someone who has retired.
-The question in front of you is "can we archive it?" and to answer that you first
-have to answer "what is in it?"
+The question in front of you is "can we archive it?" and to answer that you
+first have to answer "what is in it?"
 
 What you can do today is guess and then check. `zw ^JRNAUD(1)` shows you one
 node. `$ORDER` a few levels by hand and you learn the first subscript looks like
@@ -66,28 +66,28 @@ peek ^JRNAUD("2020-03-11")     11,905 nodes; subscript 2: 3 distinct, entropy 0.
 ```
 
 The second one is the finding. A day where the facility code collapses to three
-distinct values in a global that normally carries 61 is either a partial write or
-the day the schema changed. Nobody was looking for it, and no sample of the first
-50,000 nodes would have surfaced it. It came out of the shape of the aggregates,
-which is the thing that survives when the data cannot leave.
+distinct values in a global that normally carries 61 is either a partial write
+or the day the schema changed. Nobody was looking for it, and no sample of the
+first 50,000 nodes would have surfaced it. It came out of the shape of the
+aggregates, which is the thing that survives when the data cannot leave.
 
 Two details in that trace are load-bearing. The cap is reported rather than
 hidden, because a model that reads `50,000` as a total will build every later
-claim on it. And the model chose `2019-11-04` from a list the store handed it, so
-it cannot name a subscript that does not exist, and access can be authorized per
-slice by a DBA who never has to trust the prompt.
+claim on it. And the model chose `2019-11-04` from a list the store handed it,
+so it cannot name a subscript that does not exist, and access can be authorized
+per slice by a DBA who never has to trust the prompt.
 
 `RLM.Source.Global` does this and ships now. It walks with recursive `$ORDER`
-under a visit cap and a depth cap, reads only globals matched by an allowlist you
-pass in, and refuses `^%*`, `^ROUTINE*` and friends whatever the allowlist says.
-The peek it returns is aggregates: node and child counts, the data/pointer split,
-the subscript type mix, two moments of the value lengths, and the busiest few
-children by name. Nothing else. A store 25x larger produces a peek 3% longer, and
-the suite measures that rather than asserting it.
+under a visit cap and a depth cap, reads only globals matched by an allowlist
+you pass in, and refuses `^%*`, `^ROUTINE*` and friends whatever the allowlist
+says. The peek it returns is aggregates: node and child counts, the data/pointer
+split, the subscript type mix, two moments of the value lengths, and the busiest
+few children by name. Nothing else. A store 25x larger produces a peek 3%
+longer, and the suite measures that rather than asserting it.
 
 The same argument holds for `RLM.Source.Table` with less drama: a 400M-row
-`Ens.MessageHeader` under an SLA answers a peek from an index in milliseconds and
-cannot be exported at all.
+`Ens.MessageHeader` under an SLA answers a peek from an index in milliseconds
+and cannot be exported at all.
 
 See [the walkthrough](specs/004-global-source/quickstart.md) for a real
 decomposition with the figures the suite produces.
@@ -147,10 +147,10 @@ Write d.Dimension, " beat ", d.Candidates.Count() - 1, " alternative(s)"
 
 ## How deep to go
 
-`MaxDepth` is how many levels below the run's starting point to decompose. 1, the
-default, decides once at the root and describes each child, which is what the
-engine did before recursion existed. Raise the call budget along with it: each
-level multiplies the slices that want describing.
+`MaxDepth` is how many levels below the run's starting point to decompose. 1,
+the default, decides once at the root and describes each child, which is what
+the engine did before recursion existed. Raise the call budget along with it:
+each level multiplies the slices that want describing.
 
 ```objectscript
 Set engine.MaxDepth = 2
@@ -186,8 +186,8 @@ Do src.AddBucketedDimension("amount", "Amount", $ListBuild(100, 1000))
 
 Three children (`Amount < 100`, `Amount [100,1000)`, `Amount >= 1000`) with
 half-open, lower-inclusive boundaries, and one range query per child rather than
-one per row. Breakpoints are validated when declared, not when queried, and every
-edge reaches SQL as a bound parameter.
+one per row. Breakpoints are validated when declared, not when queried, and
+every edge reaches SQL as a bound parameter.
 
 Rows whose value is null fall in no bucket, so the children do not sum to the
 parent. The report says so:
@@ -206,9 +206,9 @@ is what keeps the two comparable.
 Set engine.ReportStyle = "markdown"   ; or "plain", the default
 ```
 
-Both carry the same figures and the same caveats; they differ only in punctuation.
-A run's trace renders for a human separately, from a run id and a database, with
-no live engine:
+Both carry the same figures and the same caveats; they differ only in
+punctuation. A run's trace renders for a human separately, from a run id and a
+database, with no live engine:
 
 ```objectscript
 Do report.Fenced(##class(RLM.Report).RenderTrace(traceId))
@@ -219,8 +219,8 @@ no reason attached is the row a reader of a short report came looking for.
 
 ## A store that is not ready to be reported on
 
-`RLM.Source.Ready(.reason)` is concrete and returns 1, so no existing source needs
-editing. A store mid-load overrides it:
+`RLM.Source.Ready(.reason)` is concrete and returns 1, so no existing source
+needs editing. A store mid-load overrides it:
 
 ```objectscript
 Method Ready(Output reason As %String) As %Boolean
@@ -231,9 +231,9 @@ Method Ready(Output reason As %String) As %Boolean
 ```
 
 The engine checks it before any model call and before the root peek, and returns
-the reason as the report. The alternative is averaging over whichever rows happen
-to be present, which produces a document that is both confident and wrong, and
-that a reader cannot tell from a correct one.
+the reason as the report. The alternative is averaging over whichever rows
+happen to be present, which produces a document that is both confident and
+wrong, and that a reader cannot tell from a correct one.
 
 ## Design invariants
 
@@ -257,13 +257,13 @@ that a reader cannot tell from a correct one.
 
 [gaia-iml](https://github.com/isc-tdyar/gaia-iml) runs on the library. It is a
 Gaia DR3 photometry survey of 74,998 sources, scored in IRIS by two NGBoost
-IntegratedML models, and it had its own recursion before this library existed, so
-it is the case that says whether the seams are in the right places.
+IntegratedML models, and it had its own recursion before this library existed,
+so it is the case that says whether the seams are in the right places.
 
-What it had to write is one source class: `Gaia.Source extends RLM.Source.Table`,
-declaring six dimensions that expand to 22 slices, sixteen aggregates per peek,
-its own `Describe`, and a `>= 400`-row floor below which it declines to split.
-Everything else came from here.
+What it had to write is one source class: `Gaia.Source extends
+RLM.Source.Table`, declaring six dimensions that expand to 22 slices, sixteen
+aggregates per peek, its own `Describe`, and a `>= 400`-row floor below which it
+declines to split. Everything else came from here.
 
 Porting removed 510 lines from the consumer, and every line removed was
 machinery: a recursion, a call budget, a dimension-choosing prompt, a report
@@ -284,8 +284,15 @@ became `?`. Fixed here, with a round-trip test, rather than worked around there.
 ## Portability
 
 Two IPM modules. `rlm-core` has no `%AI.*` dependency and talks to any
-OpenAI-compatible endpoint over `%Net.HttpRequest`. `rlm-aihub` adds AI Hub
-integration on IRIS versions that ship it.
+OpenAI-compatible endpoint over `%Net.HttpRequest`. `rlm-aihub` adds one class,
+`RLMAIHub.Provider`, on IRIS versions that ship AI Hub: a provider name and a
+model instead of a URL and a key, plus the instance's authorization and audit
+policies.
+
+The engine gained no `%AI.` reference to make that work — `rlm-aihub` supplies
+an `RLM.LLM` implementation and nothing else. An AI Hub run produces a document
+byte-identical to the same run through the portable provider, and the test suite
+asserts it.
 
 Portable is the default rather than the fallback. See
 [SPEC §3.1](docs/SPEC.md).
@@ -300,7 +307,8 @@ Portable is the default rather than the fallback. See
 - [x] **M3** Replay + offline evaluation + `RLM.LLM.Null` CI
 - [x] **M4** `Interop` and `Audit` sources (shared `Extent` base, bounded
       distributions, exact reconciliation)
-- [ ] **M5** `rlm-aihub`
+- [x] **M5** `rlm-aihub` (`RLMAIHub.Provider` over `%AI.Provider.ChatComplete`,
+      policy seams, second IPM manifest)
 
 ## Does the model beat Greedy?
 

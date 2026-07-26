@@ -141,4 +141,102 @@ Method TestNoStoreContentReachedTheProvider()
     Do $$$AssertEquals(leaked, 0, "and no message carried the planted value")
 }
 
+/// A provider that fails mid-run costs one sub-call, not the report.
+///
+/// The whole reason `Complete` converts a throw into a status. An exception would
+/// unwind through `RLM.Engine.Run`'s handler and the reader would receive "The
+/// analysis stopped early" with an ObjectScript error code in place of the
+/// decomposition -- everything before the failure thrown away along with it.
+///
+/// Three things are asserted, because any one alone can be satisfied dishonestly: the
+/// report exists and still contains the decomposition, the failure is disclosed in it
+/// rather than swallowed, and the run kept going past the failed call. The middle one
+/// is Constitution III at the sub-call level: a slot that produced nothing must say so.
+///
+/// Disclosure is asserted as the engine's caveat -- "the sub-call for 'x' failed; that
+/// slice is described by its statistics only" -- and not as the provider's error text.
+/// The engine does not put a provider's message into the document, and it should not:
+/// an error string is a fact about an outage, while the caveat is the fact the reader
+/// needs, which is that a slice in front of them was never analysed.
+Method TestAFailedCallCostsOneSubCallAndNotTheReport()
+{
+    Set stub = ##class(UnitTest.RLMAIHub.StubProvider).%New(..Script())
+    Set stub.ThrowOnCall = 2
+    Set aihub = ##class(RLMAIHub.Provider).%New("stub", "null")
+    Set aihub.Provider = stub
+    Set report = ..Run(aihub)
+
+    Do $$$AssertNotEquals(report, "", "the run still produced a report")
+    Do $$$AssertEquals($Find(report, "stopped early"), 0, "and did not abort: "_$Extract(report, 1, 200))
+    Do $$$AssertTrue($Find(report, "Question") > 0, "the document is still a report")
+    Do $$$AssertTrue(stub.Calls > 2, "and the run continued past the failed call: "_stub.Calls)
+    Do $$$AssertTrue($Find(report, "sub-call") > 0, "the failed sub-call is disclosed in the report")
+    Do $$$AssertTrue($Find(report, "statistics only") > 0, "saying what the reader is looking at instead")
+
+    // The other side. Without it the two assertions above could be passing on
+    // boilerplate every report carries, and the test would prove nothing.
+    Set ok = ##class(UnitTest.RLMAIHub.StubProvider).%New(..Script())
+    Set good = ##class(RLMAIHub.Provider).%New("stub", "null")
+    Set good.Provider = ok
+    Set cleanReport = ..Run(good)
+    Do $$$AssertEquals($Find(cleanReport, "statistics only"), 0, "a run with no failure carries no such caveat")
+}
+
+/// The same failure, asserted from the trace rather than the document.
+///
+/// The report is what a reader sees; the trace is what an auditor replays. A failed
+/// call that spent a slot but left no row would make the two disagree about how much
+/// the run cost, and the budget line in the report would be the one that was wrong.
+Method TestAFailedCallIsOnTheRecord()
+{
+    Kill ^RLM.Trace
+    Set stub = ##class(UnitTest.RLMAIHub.StubProvider).%New(..Script())
+    Set stub.ThrowOnCall = 2
+    Set aihub = ##class(RLMAIHub.Provider).%New("stub", "null")
+    Set aihub.Provider = stub
+    Set engine = ##class(RLM.Engine).%New(..Store(), aihub,
+        ##class(RLM.Budget).%New(24), ##class(RLM.Policy.Greedy).%New())
+    Set engine.MaxDepth = 2
+    Set engine.DurableTrace = 1
+    Do engine.Run("how does this store divide?", .traceId)
+
+    Set rows = 0, seq = ""
+    For  {
+        Set seq = $Order(^RLM.Trace(traceId, seq))
+        Quit:seq=""
+        Quit:seq'?1.N
+        Set rows = rows + 1
+    }
+    Do $$$AssertTrue(rows > 2, "the trace recorded the run past the failure: "_rows_" row(s)")
+    Kill ^RLM.Trace
+}
+
+/// A run the instance will not authorize produces a report that says so.
+///
+/// The worst outcome here is not the refusal. It is a document that reads as a
+/// complete analysis of a store nobody was permitted to ask a model about -- every
+/// slice present, every heading filled with statistics, and nothing to tell the reader
+/// no model ever saw any of it. So the assertion is on disclosure: the report exists,
+/// the slices are named, and each one says its analysis did not happen.
+///
+/// The provider's call count is asserted at zero for the same reason as the unit test:
+/// authorization runs before the round-trip, so a refused run costs nothing at the
+/// provider even though it costs slots in the budget.
+Method TestARefusedRunDisclosesTheRefusalRatherThanOmittingTheSlices()
+{
+    Set stub = ##class(UnitTest.RLMAIHub.StubProvider).%New(..Script())
+    Set aihub = ##class(RLMAIHub.Provider).%New("stub", "null")
+    Set aihub.Provider = stub
+    Set auth = ##class(UnitTest.RLMAIHub.StubAuth).%New()
+    Set auth.RefuseWith = "this namespace may not call out"
+    Set aihub.AuthPolicy = auth
+    Set report = ..Run(aihub)
+
+    Do $$$AssertNotEquals(report, "", "a refused run still produces a report")
+    Do $$$AssertEquals(stub.Calls, 0, "and never reached the provider")
+    Do $$$AssertTrue(auth.Calls > 0, "though the policy was asked: "_auth.Calls)
+    Do $$$AssertTrue($Find(report, "Question") > 0, "the document is still a report")
+    Do $$$AssertTrue($Find(report, "statistics only") > 0, "and discloses that no analysis happened")
+}
+
 }
