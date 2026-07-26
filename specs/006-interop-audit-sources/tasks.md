@@ -126,11 +126,11 @@ implementation, and each phase's tests are the gate on the next.
       the source reads
 - [x] T042 **Feature gate**: full suite green, count is 265 plus every test added
       above, with no prior test edited
-- [ ] T043 [P] Update `docs/SPEC.md` §7 to check off M4 with what shipped, and
+- [x] T043 [P] Update `docs/SPEC.md` §7 to check off M4 with what shipped, and
       `README.md`'s milestone list
-- [ ] T044 [P] Add `specs/006-interop-audit-sources/quickstart.md` with the
+- [x] T044 [P] Add `specs/006-interop-audit-sources/quickstart.md` with the
       figures the suite actually produces
-- [ ] T045 Commit, stating what shipped, why `RLM.Source.Table` was not
+- [x] T045 Commit, stating what shipped, why `RLM.Source.Table` was not
       re-parented, and the container limits the tests work around
 
 ---
