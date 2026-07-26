@@ -256,7 +256,7 @@ Method Execute(
                     _"' fall in no bucket of '"_decision.Dimension
                     _"' and are counted in none of its children.")
             }
-            Set kids = ##class(RLM.Policy).Children(..Source, decision.Dimension, .ksc)
+            Set kids = ##class(RLM.Policy).Children(..Source, decision.Dimension, .ksc, path)
             Set pushed = 0
             If $$$ISOK(ksc) {
                 // Reversed, so the pop order is the store's declaration order.
@@ -377,7 +377,7 @@ Method Decide(
 Method Candidates(path As %String = "") As %List
 {
     Set out = ""
-    Set dims = ..Source.Dimensions()
+    Set dims = ..Source.Dimensions(path)
     If '$IsObject(dims) { Quit "" }
 
     Set used = ""
@@ -404,10 +404,12 @@ Method Candidates(path As %String = "") As %List
 /// here is what separates "how should this be divided" from "which pieces are
 /// worth looking at". The names are generated from the store's own children, so
 /// every one of them resolves by construction.
-Method Expand(decision As RLM.Decision) As %String
+Method Expand(
+	decision As RLM.Decision,
+	path As %String = "") As %String
 {
     If 'decision.Chose() { Quit "" }
-    Set kids = ##class(RLM.Policy).Children(..Source, decision.Dimension, .sc)
+    Set kids = ##class(RLM.Policy).Children(..Source, decision.Dimension, .sc, path)
     If $$$ISERR(sc) { Quit "" }
     Set out = "", ptr = 0
     While $ListNext(kids, ptr, token) {

@@ -206,9 +206,14 @@ shape than the harness spec proposes, the blast radius is `RLM.LLM.AIHub` and
   output on the existing Gaia decomposition.
 - **M1 — `RLM.Trace` + `RLM.Policy` contract + Greedy.** Every run emits a
   replayable record; LLM and Greedy are comparable.
-- **M2 — `Global` source.** Bounded `$ORDER` walk, reported visit cap,
-  fail-closed allowlist, ~120 lines of LLM-free tests over a synthetic `^||`
-  global asserting exact peek numbers, cap honesty, and allowlist refusal.
+- **M2 — `Global` source. Shipped.** Bounded recursive `$ORDER` walk, visit and
+  depth caps reported as floors, fail-closed allowlist with a non-overridable
+  deny set, hex slice keys, fanout-entropy split metric, and subscript shape
+  (type mix, value-length moments, top fanout) without subscript content. 63
+  LLM-free tests over a synthetic `^||` global; the peek of a 25x larger store
+  serializes to within 3% of the small one. `$QUERY` was rejected for the walk:
+  it visits only nodes holding a value, so a global with pointer interiors
+  reports a node count far below its real one.
 - **M3 — replay + offline evaluation + `RLM.LLM.Null` CI.** Answers "does the
   LLM beat Greedy" with numbers.
 - **M4 — `Interop` and `Audit` sources.**

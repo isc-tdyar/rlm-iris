@@ -92,13 +92,18 @@ ClassMethod ChildPredicate(
 ///
 /// Shared by every policy so they all read the store the same way; a policy that
 /// enumerated children its own way would score a different set.
+///
+/// `path` is the slice being divided. For a store whose children vary by parent,
+/// enumerating at the root returns another subtree's children, and the policy
+/// then scores peeks of slices that do not exist.
 ClassMethod Children(
 	source As RLM.Source,
 	dimension As %String,
-	Output sc As %Status) As %List
+	Output sc As %Status,
+	path As %String = "") As %List
 {
     Set sc = $$$OK, out = ""
-    Set dims = source.Dimensions()
+    Set dims = source.Dimensions(path)
     If '$IsObject(dims) {
         Set sc = $$$ERROR($$$GeneralError, "store declares no dimensions")
         Quit ""

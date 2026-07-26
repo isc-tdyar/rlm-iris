@@ -43,7 +43,7 @@ Method ChooseSplit(
     Set peeks = 0, best = "", bestScore = ""
     Set ptr = 0
     While $ListNext(candidates, ptr, dim) {
-        Set kids = ..Children(source, dim, .csc)
+        Set kids = ..Children(source, dim, .csc, path)
         If $$$ISERR(csc) {
             // FR-010: excluded, recorded, and the run continues. A store that
             // cannot answer for one dimension must not take the decomposition

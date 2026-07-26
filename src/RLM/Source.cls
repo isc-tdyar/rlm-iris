@@ -31,7 +31,16 @@ Property Name As %String;
 /// Returns an object keyed by dimension name, each holding a `label` and a
 /// `children` array of `{"token": ..., "label": ...}`. This is the complete set
 /// of legal moves; a dimension or token absent from here cannot be reached.
-Method Dimensions() As %DynamicObject [ Abstract ]
+///
+/// `path` is the slice the moves are being asked for, "" for the whole store. A
+/// flat store ignores it: a table's columns and their values are the same
+/// wherever you stand. A hierarchical store cannot -- the level-2 subscripts
+/// under `^G("2019-11-04")` are not those under `^G("2020-03-11")` -- and a
+/// store that answered from the root would advertise children that do not exist
+/// under the given parent, or resolve a legal slice to the wrong subtree. Both
+/// failures return plausible figures about a different population, which is
+/// worse than a refusal.
+Method Dimensions(path As %String = "") As %DynamicObject [ Abstract ]
 {
 }
 

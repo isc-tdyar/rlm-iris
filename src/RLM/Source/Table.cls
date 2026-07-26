@@ -143,7 +143,10 @@ Method AddBucketedDimension(
     Quit $$$OK
 }
 
-Method Dimensions() As %DynamicObject
+/// `path` is accepted and ignored. A table's columns exist in every slice and
+/// its distinct values are discovered from the whole table, so the answer here
+/// does not depend on where the caller is standing.
+Method Dimensions(path As %String = "") As %DynamicObject
 {
     Set out = {}
     Set ptr = 0

@@ -43,16 +43,20 @@ ClassMethod Resolve(
         Quit $$$OK
     }
 
-    Set dims = source.Dimensions()
-    If '$IsObject(dims) { Quit ..Refuse("source declares no dimensions", source) }
-
     Set depth = $Length(path, ..#PATHSEP)
     If depth > ..#MAXDEPTH {
         Quit ..Refuse("a slice name may nest at most "_..#MAXDEPTH_" levels", source)
     }
 
-    Set components = "", labels = "", seen = ""
+    Set components = "", labels = "", seen = "", sofar = ""
     For i = 1:1:depth {
+        // Each component is checked against the moves legal *where it stands*,
+        // not against the root's. For a hierarchical store those differ, and
+        // checking level 2 against the root would accept a token belonging to a
+        // sibling subtree -- a wrong answer rather than a refusal.
+        Set dims = source.Dimensions(sofar)
+        If '$IsObject(dims) { Quit }
+
         Set comp = $ZStrip($Piece(path, ..#PATHSEP, i), "<>W")
 
         // Exactly one separator. Zero means it is not a slice name; two or more
@@ -77,6 +81,7 @@ ClassMethod Resolve(
         Set seen = seen_$ListBuild(dim)
         Set components = components_$ListBuild(dim_..#TOKENSEP_token)
         Set labels = labels_$ListBuild(childLabel)
+        Set sofar = sofar_$Select(sofar="":"", 1:..#PATHSEP)_dim_..#TOKENSEP_token
     }
 
     // Any of the loop's guards leaves the path partially consumed. Comparing
@@ -125,11 +130,15 @@ ClassMethod MenuBrief(source As RLM.Source) As %String
 /// The full menu of legal slice names.
 ///
 /// Whatever this advertises must resolve; offering a model a move it will then
-/// be refused for making is worse than offering nothing.
-ClassMethod Menu(source As RLM.Source) As %String
+/// be refused for making is worse than offering nothing. That is why `path` is
+/// here: for a store whose children vary by parent, a menu built at the root
+/// advertises moves that are illegal below it.
+ClassMethod Menu(
+	source As RLM.Source,
+	path As %String = "") As %String
 {
     Set out = ..MenuBrief(source)_$Char(10)
-    Set dims = source.Dimensions()
+    Set dims = source.Dimensions(path)
     If '$IsObject(dims) { Quit out }
     Set it = dims.%GetIterator()
     While it.%GetNext(.dim, .spec) {
