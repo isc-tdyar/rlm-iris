@@ -8,10 +8,11 @@
 - **Portable floor**: IRIS 2026.1 community — the `rlm-iris` container, which has
   **no `%AI.*`** (`%Dictionary.CompiledClass.%ExistsId("%AI.Tool")` returns 0).
 - **AI floor**: IRIS 2026.3.0AI Build 126U — this project's own `rlm-iris-ai`
-  container, run from
-  `docker.iscinternal.com/.../irishealth-community:2026.3.0AI.126.0`. A new
-  container owned by this project, because CLAUDE.md forbids using another
-  project's (`gaia-comm-probe` runs the same image and is off limits).
+  container, run from the `irishealth-community:2026.3.0AI.126.0` preview image.
+  InterSystems staff pull that tag from the internal registry; everyone else
+  downloads the evaluation tarball from <https://evaluation.intersystems.com> and
+  `docker load`s it. `rlm-core` needs none of this — only the `rlm-aihub` module
+  and its 35 tests do.
 - **Tests**: `%UnitTest` under `src/UnitTest/RLM`, no live model, no network.
 
 ## Constitution Check
