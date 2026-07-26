@@ -230,10 +230,29 @@ shape than the harness spec proposes, the blast radius is `RLM.LLM.AIHub` and
   policy chooses the same dimension as Greedy and pays one extra call for it
   (objective 0.100 both, against 0.540 for a deliberately bad control) — a tie,
   published as one. 265 LLM-free tests.
-- **M4 — `Interop` and `Audit` sources.**
+- **M4 — `Interop` and `Audit` sources. Shipped.** Two real IRIS stores, on a
+  shared abstract `RLM.Source.Extent` that turns a dimension declaration into
+  SQL: one encoder, one decoder, values bound rather than spliced, and a
+  bounded top-k distribution so a slice with ten thousand distinct groups costs
+  the same peek as one with three. `RLM.Source.Interop` divides
+  `Ens.MessageHeader` by sending config, receiving config, status and hour of
+  day; its metric is how mixed the slice's source-target routing is. Hour is
+  derived rather than enumerated, so a store spanning a week offers the same 24
+  children as one spanning an hour — the fanout is a property of the dimension,
+  not of how long the production has been running. `RLM.Source.Audit` divides
+  `%SYS.Audit` by facility, event type, user and namespace, and never reads
+  `EventData`, `Description` or `UserInfo`: the columns that carry content are
+  not selected, so there is nothing to filter out later. Both refuse in the
+  store's own terms — a namespace without interop is not a store with no rows,
+  and a log that is empty because auditing is off is not a log that is empty
+  because nothing happened. Child counts plus the disclosed `NullCount` equal
+  the parent with `=` and no tolerance, including rows whose timestamp is null.
+  `RLM.Source.Table` was deliberately not re-parented onto the shared base: it
+  is shipped and its output is asserted byte for byte by the Gaia port tests,
+  and the duplication is the price. 300 LLM-free tests.
 - **M5 — `rlm-aihub`.** `RLM.LLM.AIHub`, policy hooks, delegating variant.
 
-M0–M3 have no AI Hub dependency and no key beyond an OpenAI-compatible endpoint.
+M0–M4 have no AI Hub dependency and no key beyond an OpenAI-compatible endpoint.
 
 ## 8. Open questions
 

@@ -298,7 +298,8 @@ Portable is the default rather than the fallback. See
       scoped runs, readiness refusal
 - [x] **M2** `Global` source (bounded walk, reported caps, allowlist)
 - [x] **M3** Replay + offline evaluation + `RLM.LLM.Null` CI
-- [ ] **M4** `Interop` and `Audit` sources
+- [x] **M4** `Interop` and `Audit` sources (shared `Extent` base, bounded
+      distributions, exact reconciliation)
 - [ ] **M5** `rlm-aihub`
 
 ## Does the model beat Greedy?
