@@ -289,7 +289,7 @@ OpenAI-compatible endpoint over `%Net.HttpRequest`. `rlm-aihub` adds one class,
 model instead of a URL and a key, plus the instance's authorization and audit
 policies.
 
-The engine gained no `%AI.` reference to make that work — `rlm-aihub` supplies
+The engine gained no `%AI.` reference to make that work: `rlm-aihub` supplies
 an `RLM.LLM` implementation and nothing else. An AI Hub run produces a document
 byte-identical to the same run through the portable provider, and the test suite
 asserts it.
@@ -326,11 +326,11 @@ UnitTest.RLM.PolicyBad                 3     4      2     0.540  channel
 
 The model picks the same dimension Greedy picks and pays a model call to do it.
 The control policy, which maximizes the metric instead of minimizing it, scores
-0.540 — so the scorecard can tell a good division from a bad one, which is what
+0.540, so the scorecard can tell a good division from a bad one, which is what
 makes the tie a result rather than a broken measurement.
 
 One fixture is not a finding about models. It is a harness that produces the
-number offline, from a scripted provider, with no network — so the same question
+number offline, from a scripted provider, with no network, so the same question
 can be asked of a real store without a live key. Cost and quality stay in
 separate columns and are never netted into a ranking.
 
