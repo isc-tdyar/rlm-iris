@@ -244,7 +244,10 @@ agent never returns when the parent's own loop dispatches it — and only when t
 child has tools attached. It also leaks license slots. Any engine-managed
 parallel fan-out in `rlm-aihub` waits on that fix; `rlm-core` is unaffected
 because it recurses in ObjectScript. Re-confirmed on Build 126U while building
-M5.
+M5. Written up as an enhancement request with acceptance criteria in
+[ER-AIHUB-RECURSIVE-SUBAGENTS.md](ER-AIHUB-RECURSIVE-SUBAGENTS.md), which asks
+for the general capability — recursion to arbitrary depth with runtime-decided
+fan-out width — rather than only the defect fix.
 
 **`%AI.LLM.Response` carries no finish reason.** `FromJSON` reads `content`, `usage`
 and `tool_calls` and nothing else, so `RLM.LLM.REST`'s refusal of a completion
