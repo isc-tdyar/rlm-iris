@@ -120,4 +120,58 @@ Method NullCount(
     Quit 0
 }
 
+/// The records inside `predicate`, rendered for a model, at most `limit` of them.
+///
+/// Concrete and returning "" -- meaning "this store does not offer contents" --
+/// for the same reason Ready() is concrete: a source written before lenses existed
+/// must not need editing to keep working. RLM.Lens.Contents reads "" as a refusal
+/// and falls back to statistics, so the old behaviour is what an un-overridden
+/// source still gets.
+///
+/// This is the method that widens the contract, and it is worth being exact about
+/// what it does and does not give up. The context bound is unchanged: a view is
+/// capped at `limit` records, so what the model accumulates is still slices
+/// inspected times cap-per-slice rather than anything proportional to the store.
+/// What changes is that a slice the recursion has made small can now be answered
+/// from rather than summarized, which is what most real questions need.
+///
+/// Two obligations on an implementation:
+///
+/// 1. Never return more than `limit` records, and set `truncated` when there were
+///    more to return. A view that silently shows the first 20 of 4,000 is the
+///    same failure as a silently capped count, one level up.
+/// 2. Render only what the store has declared. A source that materializes every
+///    column reachable from a row hands the model data nobody scoped, and a slice
+///    stops being an authorizable unit.
+Method Materialize(
+	predicate As %String = "",
+	limit As %Integer = 20,
+	Output truncated As %Boolean) As %String
+{
+    Set truncated = 0
+    Quit ""
+}
+
+/// Whether a slice is small enough to be read rather than summarized.
+///
+/// Concrete because the answer is a count against a cap for almost every store,
+/// and a source with a stranger notion of size -- a global whose nodes are 4 MB
+/// each, a table with a stream column -- overrides it.
+///
+/// A capped peek never fits. Its count is a floor, so a slice that reports 40
+/// nodes against a walk that stopped early may hold forty million, and reading it
+/// on the strength of that floor is how a bounded walk becomes an unbounded one.
+/// This is the same reading of `capped` the report makes when it words a count as
+/// "at least"; the consequence here is just larger.
+Method Fits(
+	peek As %DynamicObject,
+	maxRecords As %Integer = 20) As %Boolean
+{
+    If '$IsObject(peek) { Quit 0 }
+    If peek.error '= "" { Quit 0 }
+    If peek.capped { Quit 0 }
+    If +peek.n <= 0 { Quit 0 }
+    Quit +peek.n <= maxRecords
+}
+
 }

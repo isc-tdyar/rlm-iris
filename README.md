@@ -106,6 +106,71 @@ Markdown dump. It fails on the stores that need it most:
 | Governance            | Data is a process variable | A slice is an authorizable query |
 | Model's action space  | Any Python string          | Enumerated legal moves           |
 | Replayable evaluation | Stateful REPL, expensive   | Pure function of the store, free |
+| Findings outlive a run| Die with the process       | A global, queryable and resumable|
+
+## What the model sees at a slice
+
+Summary statistics are what you compute when a slice is too large to read. That
+is the pathological case, not the design centre — and most real questions are
+judgements *over* records rather than aggregations *of* them. Which patients meet
+the criteria, which messages failed and why, which rows look wrong: no aggregate
+answers any of those.
+
+What earns the right to read is the decomposition itself. A slice that starts at
+400M rows is, a few levels down, a few dozen, and a few dozen fit. A lens is the
+seam that decides what the model gets when the traversal arrives:
+
+```objectscript
+Set engine.Lens = ##class(RLM.Lens.Contents).%New(20)   ; or omit for statistics
+```
+
+| Lens                | The model receives          | Use when                          |
+| ------------------- | --------------------------- | --------------------------------- |
+| `RLM.Lens.Stats`    | Aggregates only, as before  | PHI, an extent too large at any depth |
+| `RLM.Lens.Contents` | The records, capped at *n*  | The recursion has made the slice small |
+
+`Stats` is the default, so an existing run is unchanged in every byte, and the
+store that can never be read keeps the guarantee the package started with by
+doing nothing.
+
+`Contents` reads a slice only when the store says it fits, and a slice whose
+count came back capped never fits — a floor of 5 nodes may be five million, and
+trusting it is how a bounded walk becomes an unbounded read. Every fallback and
+every unexpected truncation lands in the caveats:
+
+```text
+- 'big' holds more than 20 record(s) or its count is a floor, so it is
+  described by its statistics rather than read.
+```
+
+The context bound is unchanged, because it was never about statistics: a view is
+capped at *n* records, so what the model accumulates is slices inspected times
+cap-per-slice, and still nothing proportional to the store.
+
+A source that predates lenses keeps working. `RLM.Source.Materialize` is concrete
+and returns nothing, which `Contents` reads as a refusal and falls back on.
+
+## What a run leaves behind
+
+Sub-calls in a REPL-based RLM are independent map operations, and whatever they
+learn dies with the process holding the variable. That is a property of the
+substrate rather than of the method — a Python local has nowhere to put a finding
+that outlives the call that made it.
+
+A global does. Findings are written as the run proceeds, keyed by the slice that
+produced them and sharing the trace's run id:
+
+```objectscript
+Do engine.Run("which batches failed?", .traceId)
+Write engine.State.Get("batch:small", "finding")
+Write $ListLength(engine.State.Findings())   ; one row per slice examined
+```
+
+So a decomposition is an artifact rather than a paragraph: queryable without
+re-parsing the report, resumable against what a budget-exhausted run already
+established, and readable by a later slice instead of being rediscovered. It is
+process-private by default and durable when the trace is, because the two answer
+the same question — is this run meant to outlive the process.
 
 ## Choosing how to split
 
@@ -309,6 +374,8 @@ Portable is the default rather than the fallback. See
       distributions, exact reconciliation)
 - [x] **M5** `rlm-aihub` (`RLMAIHub.Provider` over `%AI.Provider.ChatComplete`,
       policy seams, second IPM manifest)
+- [x] **M6** `RLM.Lens` seam (`Stats` and `Contents`), `Source.Materialize` and
+      `Source.Fits`, and `RLM.State` run scratchpad
 
 ## Does the model beat Greedy?
 

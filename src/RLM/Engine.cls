@@ -64,6 +64,25 @@ Property Budget As RLM.Budget;
 /// the engine had before policies existed, so existing callers are unaffected.
 Property Policy As RLM.Policy;
 
+/// What the model is shown for a slice it has reached. Defaults to
+/// RLM.Lens.Stats, which is the aggregates-only view the engine had before lenses
+/// existed, so an existing run is unchanged in every byte.
+///
+/// Swapping in RLM.Lens.Contents is what turns a decomposition from "describe the
+/// shape of each subset" into "answer the question from each subset", which is
+/// what most questions actually want. The traversal, the budget and the grammar
+/// are identical either way: only the view changes.
+Property Lens As RLM.Lens;
+
+/// Findings written as the run proceeds, keyed by slice.
+///
+/// Populated by Run and readable afterwards, so a caller gets the decomposition as
+/// data as well as as prose. Durable when DurableTrace is, because the two answer
+/// the same question -- is this run meant to outlive the process -- and a durable
+/// trace beside process-private findings would resume onto a scratchpad that is
+/// already gone.
+Property State As RLM.State;
+
 /// Write the trace to ^RLM.Trace rather than the process-private global.
 Property DurableTrace As %Boolean [ InitialExpression = 0 ];
 
@@ -91,6 +110,7 @@ Method %OnNew(
     } Else {
         Set ..Policy = ##class(RLM.Policy.LLM).%New(llm)
     }
+    Set ..Lens = ##class(RLM.Lens.Stats).%New()
     Quit $$$OK
 }
 
@@ -149,6 +169,12 @@ Method Execute(
     Set trace = ##class(RLM.Trace).%New(..DurableTrace)
     Set traceId = trace.RunId
     Set caveats = ""
+
+    // The scratchpad shares the trace's run id, so a finding can be read back
+    // beside the calls that produced it without either structure knowing about
+    // the other. Built before the readiness check so a caller inspecting State
+    // after a refused run finds an empty scratchpad rather than an unset property.
+    Set ..State = ##class(RLM.State).%New(trace.RunId, ..DurableTrace)
 
     // Readiness first, before the peek and before any call. A store mid-load is
     // most likely to fail on exactly the peek this skips, and a refusal that has
@@ -298,7 +324,17 @@ Method Execute(
             Continue
         }
 
-        Set desc = ..Source.Describe(label, peek)
+        // What the model is shown. Under the default lens this is Describe and
+        // nothing else, so the prompt is the one the engine has always built.
+        //
+        // The read is not charged against the peek pool, and the asymmetry with
+        // RLM.Policy is deliberate: a policy peeks once per child of every
+        // candidate dimension, which fans out and needs its own ceiling, while a
+        // view is one read of a slice the traversal has already committed a model
+        // call to. The call budget bounds how many of those there can be, so a
+        // second ceiling over the same set would only be able to disagree with it.
+        Set desc = ..Lens.View(..Source, label, peek, predicate, .disclosed)
+        If disclosed '= "" { Set caveats = caveats_$ListBuild(disclosed) }
         Set metric = ..Source.SplitMetric(peek)
         Set note = ..Ask("subcall", ..SubcallInstructions(),
             ..SubcallPrompt(question, desc), trace, depth, path, .ssc, metric)
@@ -307,6 +343,11 @@ Method Execute(
             Set caveats = caveats_$ListBuild("The sub-call for '"_label_"' failed; that slice is described by its statistics only.")
             Set note = "(no analysis: sub-call failed)"
         }
+        // Recorded whether or not the call succeeded. A resumed run needs to tell
+        // a slice that answered nothing from one that was never reached, and the
+        // two are indistinguishable in a scratchpad that only keeps successes.
+        Do ..State.Put(path, "label", label)
+        Do ..State.Put(path, "finding", note)
         Set notes = notes_$ListBuild(label_" ["_desc_"] "_note)
         Set depths = depths_$ListBuild(depth)
     }
@@ -333,6 +374,11 @@ Method Execute(
     // answer with is worse than a coarse answer, which is why the budget holds a
     // slot back for exactly this call.
     Set answer = ..Synthesize(question, rootDesc, notes, trace)
+
+    // The root's own entry, so the scratchpad holds the whole of what the run
+    // established rather than only its parts.
+    Do ..State.Put(rootPath, "question", question)
+    Do ..State.Put(rootPath, "answer", answer)
 
     Do report.AddBlank()
     Do report.Heading("Answer")
@@ -512,12 +558,17 @@ Method PlanPrompt(
         _##class(RLM.Slice).Menu(..Source)
 }
 
+/// Delegated to the lens, because the instruction has to match what the model is
+/// about to be handed. Telling it to "state what the statistics support" while
+/// showing it rows yields a summary of records it was meant to answer from, and
+/// the failure is quiet: the output still reads like an analysis.
+///
+/// The method stays here, and stays overridable, because a caller that had
+/// replaced it before lenses existed is replacing the instruction for the view it
+/// also chose.
 Method SubcallInstructions() As %String
 {
-    Quit "You are describing one slice of a data store from its aggregate "
-        _"statistics alone. Quote figures under the exact names you were given "
-        _"them under. State what the statistics support and nothing further. "
-        _"Two or three sentences."
+    Quit ..Lens.Instructions()
 }
 
 Method SubcallPrompt(

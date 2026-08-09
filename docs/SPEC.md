@@ -38,6 +38,23 @@ Two consequences follow, and they are the package's reason to exist:
   timidity.
 - No agent tool-loop. Every LLM call is one bounded round-trip.
 
+**Amended at M6.** The second item was written as though "structured store"
+implied "aggregates only", and the source contract encoded that as a prohibition
+on returning rows. That conflated two different things. The bound this design
+actually needs is that a **view is capped by a constant**, so context grows with
+slices inspected rather than with store size; whether the view holds statistics
+or records was never what made the bound hold.
+
+Aggregates are what you compute when a slice is too large to read — the
+pathological case rather than the design centre. Most questions worth asking are
+judgements over records, and the decomposition is precisely what makes reading
+them affordable: a slice that starts at 400M rows is, some levels down, small
+enough. `RLM.Lens` is the seam that lets a run say which of the two it wants,
+with `RLM.Lens.Stats` the default so a governed store keeps the original
+guarantee by doing nothing. See [specs/008](../specs/008-lenses-and-state/spec.md).
+
+The other three non-goals are unchanged and remain load-bearing.
+
 ## 3. Architecture
 
 ```text
@@ -51,6 +68,12 @@ RLM.Slice            fail-closed `dim:token[/dim:token]` grammar over any Source
 RLM.Budget           call accounting, reserved synthesis slot
 RLM.Trace            structured trajectory record
 RLM.Report           UTF-8 report writer, indent
+RLM.State            per-slice findings; ^RLM.State or process-private
+
+RLM.Lens             abstract: View(source, label, peek, predicate) -> what the
+                     model is shown at a leaf
+  .Stats             Source.Describe, aggregates only; the default
+  .Contents          the records themselves, capped, once the slice fits
 
 RLM.Policy           abstract: ChooseSplit(peek, candidates) -> dim
   .Greedy            highest relative spread; no LLM

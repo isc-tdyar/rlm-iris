@@ -318,6 +318,82 @@ Method NullCount(
     Quit +rs.%Get("n")
 }
 
+/// The rows of one slice, at most `limit` of them, as one labelled line each.
+///
+/// Only declared columns are read: the properties behind this source's dimensions
+/// plus its measure. That is a narrower set than "every column of the row" on
+/// purpose. A dimension is something an operator chose to expose, so materializing
+/// exactly those keeps a slice an authorizable unit -- a DBA who approved the
+/// dimensions has approved everything a view can show. A source that returned
+/// SELECT * would hand the model whatever else the table happens to carry, which
+/// on a clinical or financial extent is the whole of the governance problem.
+///
+/// `limit + 1` rows are requested so truncation is observed rather than inferred.
+/// A slice of exactly `limit` rows and a slice of ten thousand both return `limit`
+/// rows to a query that asked for `limit`, and only one of them is complete.
+///
+/// Values reach the output through %Get rather than through string assembly in
+/// SQL, so a value containing the delimiter cannot restructure the rendering.
+Method Materialize(
+	predicate As %String = "",
+	limit As %Integer = 20,
+	Output truncated As %Boolean) As %String
+{
+    Set truncated = 0
+    If limit < 1 { Quit "" }
+
+    // Declaration order, de-duplicated: two dimensions may sit over one property,
+    // and a measure is routinely also a bucketed dimension's property. A repeated
+    // column would render the same value twice and read as two findings.
+    //
+    // Column names and property names are tracked separately for the reason
+    // SQLTable() and Column() exist at all: the query needs the column and the
+    // rendered line needs the name the dimension was declared under, and on a
+    // DDL-created class those are different strings.
+    Set cols = "", sqlNames = "", labels = "", seen = "", ptr = 0
+    While $ListNext(..DimOrder, ptr, dim) {
+        Set property = ..Dims.GetAt(dim)
+        Continue:property=""
+        Continue:$ListFind(seen, property)
+        Set seen = seen_$ListBuild(property)
+        Set col = ..Column(property)
+        Set cols = cols_$Select(cols="":"", 1:", ")_col
+        Set sqlNames = sqlNames_$ListBuild(col)
+        Set labels = labels_$ListBuild(property)
+    }
+    If (..Measure '= ""), '$ListFind(seen, ..Measure) {
+        Set seen = seen_$ListBuild(..Measure)
+        Set col = ..Column(..Measure)
+        Set cols = cols_$Select(cols="":"", 1:", ")_col
+        Set sqlNames = sqlNames_$ListBuild(col)
+        Set labels = labels_$ListBuild(..Measure)
+    }
+    // A source with no dimensions declared has nothing scoped, and materializing
+    // under that condition would be reading columns nobody named.
+    If cols = "" { Quit "" }
+
+    // Where() before Query() rather than inside its argument list: `args` is both
+    // set by the first call and read by the second, and leaving that to argument
+    // evaluation order makes a correct query depend on something invisible.
+    Set where = ..Where(predicate, .args)
+    Set sql = "SELECT TOP "_(limit + 1)_" "_cols_" FROM "_..SQLTable()_where
+    Set rs = ..Query(sql, .sc, args)
+    If $$$ISERR(sc) { Quit "" }
+
+    Set out = "", rows = 0
+    While rs.%Next() {
+        Set rows = rows + 1
+        If rows > limit { Set truncated = 1 Quit }
+        Set line = ""
+        For i = 1:1:$ListLength(labels) {
+            Set v = rs.%Get($ListGet(sqlNames, i))
+            Set line = line_$Select(line="":"", 1:"; ")_$ListGet(labels, i)_"="_v
+        }
+        Set out = out_$Select(out="":"", 1:$Char(10))_"- "_line
+    }
+    Quit out
+}
+
 Method Describe(
 	label As %String,
 	peek As %DynamicObject) As %String
