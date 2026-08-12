@@ -376,6 +376,8 @@ Portable is the default rather than the fallback. See
       policy seams, second IPM manifest)
 - [x] **M6** `RLM.Lens` seam (`Stats` and `Contents`), `Source.Materialize` and
       `Source.Fits`, and `RLM.State` run scratchpad
+- [ ] **M7** `RLM.Grammar` seam — the action space, declaring per grammar whether
+      replay and counterfactuals survive ([specs/009](specs/009-action-space/spec.md))
 
 ## Does the model beat Greedy?
 

@@ -83,8 +83,9 @@ trajectory separable by level.
 
 - Not a trainer. No GPUs, no vLLM, no `verifiers` dependency.
 - Not an offloading substrate for arbitrary text. Sources are structured stores.
-- No arbitrary code execution by the model. See §5 — this is load-bearing, not
-  timidity.
+- No arbitrary code execution by the model. See §5 and §5.1 — this is
+  load-bearing, not timidity, and §5.1 says precisely which guarantee it
+  protects.
 - No agent tool-loop. Every LLM call is one bounded round-trip.
 
 **Amended at M6.** The second item was written as though "structured store"
@@ -120,9 +121,14 @@ RLM.Report           UTF-8 report writer, indent
 RLM.State            per-slice findings; ^RLM.State or process-private
 
 RLM.Lens             abstract: View(source, label, peek, predicate) -> what the
-                     model is shown at a leaf
+                     model is shown at a leaf   (the observation space)
   .Stats             Source.Describe, aggregates only; the default
   .Contents          the records themselves, capped, once the slice fits
+
+RLM.Grammar          abstract: what the model may *do*  (the action space, v2)
+  .Enumerated        dim:token over Source.Dimensions, via RLM.Slice; the default
+  .Query             structured, validated predicate composition; keeps replay,
+                     gives up free counterfactuals -- see specs/009
 
 RLM.Policy           abstract: ChooseSplit(peek, candidates) -> dim
   .Greedy            highest relative spread; no LLM
@@ -273,6 +279,33 @@ recorded step can be enumerated. That yields, with zero training:
 This is why the package forbids model-authored code (§2). Arbitrary
 `execute_python` would make replay non-deterministic and forfeit everything
 above. The constraint buys the evaluation story.
+
+### 5.1 What the constraint actually bundles
+
+Worth separating, because the rule above is one sentence covering two independent
+guarantees, and they come apart cleanly:
+
+- **Determinism → replay.** A resolved move must be a reproducible function of
+  stored state. Note what this does *not* require: model-authored SQL is still a
+  pure function of the store, so replay survives it. The word doing the work in
+  "arbitrary `execute_python`" is **arbitrary** — side effects and
+  non-determinism break replay, not authorship.
+- **Enumerable moves → counterfactuals.** `Eval.Arms` works because at each
+  decision there is a *finite* set of dimensions not taken, each re-scorable with
+  one peek. A composed query has no set of arms not taken.
+
+So a wider action space can keep replay while losing free counterfactuals. That
+is a real trade rather than a cliff, and today nothing in the package can express
+it: `Arms` and `Replay` both assume the enumerated space silently, and a
+`Scorecard` will compare two runs without recording what either was permitted to
+do. [specs/009](../specs/009-action-space/spec.md) makes the action space a seam
+that declares which of the two properties it preserves, so an evaluator refuses
+what it cannot honestly compute instead of returning a number that looks like the
+old one and means something else.
+
+Mode 4 — arbitrary code — stays out, and 009 says so explicitly rather than by
+omission: it forfeits determinism, and therefore replay, which is the property
+that distinguishes this package from every other RLM implementation.
 
 ## 6. Relationship to the AI Hub surface
 
