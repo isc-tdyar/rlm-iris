@@ -225,26 +225,61 @@ This is why the package forbids model-authored code (§2). Arbitrary
 `execute_python` would make replay non-deterministic and forfeit everything
 above. The constraint buys the evaluation story.
 
-## 6. Compatibility with the coming AI Hub additions
+## 6. Relationship to the AI Hub surface
 
-Designed so each AI Hub addition **replaces an internal, not an interface**:
+Rows are grouped by **what we know about each item**, because an earlier version
+of this section mixed three different kinds of claim into one table and read as
+though all of them were scheduled.
 
-> **Three of these had not arrived as of `ai-core` @ `994c8f1` (2026-08-07).**
-> `%AI.Op`, `%AI.Env` and `%AI.Context.Store` appear nowhere in that
-> distribution — not in either user guide, not in the samples, not in the Python
-> tree. The rows below are therefore planning against an announced surface rather
-> than an observed one, and should be read that way until the probe says
-> otherwise. [AIHUB-SURVEY.md](AIHUB-SURVEY.md) records what is actually present.
+Provenance, stated once: the capabilities in §6.2 come from *our own* AI Hub
+harness spec — the document §0 describes as one that "asks the AI Hub team for
+core `%AI.*` additions." Those are requests we made. The class names in it are
+our proposals unless the AI Hub team has adopted them, and that document is not
+in this repository, so a reader here cannot check. **Nothing in §6.2 should be
+read as an InterSystems commitment, and no code should import those names.**
 
-| AI Hub addition                | What we do now                           | On arrival                                                          |
-| ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------- |
-| `%AI.Context.Store` offloading | Peeks already bounded; no offload needed | `RLM.Source` results become handles; engine unchanged               |
-| Tool-result `Offload` mode     | N/A — we never return raw rows           | Opt in for `Describe()` output                                      |
-| LID observation renderer       | `Describe()` is already canonical        | Delegate to it, keep `Describe()` as fallback                       |
-| Scope-reduction invariant      | Depth cap + budget in `RLM.Budget`       | Adopt in the `rlm-aihub` delegating variant                         |
-| Parallel `%AI.Op.Map`          | Sequential recursion                     | Parallel fan-out in `rlm-aihub`. **Still blocked on ai-hub-eap#26** |
-| Trainability / `%AI.Env`       | `RLM.Trace` + replay                     | Export adapter; trace format already sufficient                     |
-| Core trajectory record         | `RLM.Trace`                              | Map onto it if it carries an extensible metric bag; else keep ours  |
+### 6.1 Present and verified
+
+Read from `ai-core` @ `994c8f1` (2026-08-07) and recorded in
+[AIHUB-SURVEY.md](AIHUB-SURVEY.md). `UnitTest.RLMAIHub.AgentProbe` re-checks any
+live instance.
+
+| Capability | Ours | Relationship |
+| --- | --- | --- |
+| `%AI.Provider.ChatComplete` | `RLMAIHub.Provider` | Already built on it |
+| `%AI.Agent.SubAgent` / `CreateSubAgent` | Sequential recursion in `RLM.Engine` | Candidate for `rlm-aihub`; see the ER |
+| Tool-access policies, inherited by children | Slice-level authorization argument | Stronger than assumed; adopt in `rlm-aihub` |
+| `<Query>` envelope with `truncated` | `capped` on a peek, `truncated` on a materialize | Same invariant, independently derived |
+| `AutoCompactOnTokenLimit` | Budget + reserved synthesis slot | Different mechanism, same concern |
+| `%AI.RAG.VectorStore.IRIS` | — | Candidate `RLM.Source`; not yet explored |
+| `%AI.MCP.Service` + `iris-mcp-server` | — | Could publish a Source as MCP tools |
+
+### 6.2 Requested by us, not observed anywhere
+
+Capabilities from our harness spec. Named by **what they do**, not by a class
+name, because the names were ours to propose and none of them appears in the
+distribution.
+
+| Capability we asked for | What we do instead, today | If it ever lands |
+| --- | --- | --- |
+| Context offloading / handles | Peeks are already bounded; no offload needed | `RLM.Source` results become handles; engine unchanged |
+| Tool-result offload mode | N/A — we never return raw rows | Opt in for `Describe()` output |
+| LID observation renderer | `Describe()` is already canonical | Delegate to it, keep `Describe()` as fallback |
+| Scope-reduction invariant | Depth cap + budget in `RLM.Budget` | Adopt in the `rlm-aihub` delegating variant |
+| Parallel map / fan-out operator | Sequential recursion | Parallel fan-out in `rlm-aihub` |
+| Trainability / RL environment | `RLM.Trace` + replay | Export adapter; trace format already sufficient |
+| Core trajectory record | `RLM.Trace` | Map onto it if it carries an extensible metric bag; else keep ours |
+
+Every "today" column is a shipped, tested behaviour. That is the point of the
+grouping: **nothing in this package waits on anything in §6.2.** If none of it
+ever arrives, `rlm-core` is unaffected and `rlm-aihub` loses only optimizations.
+
+### 6.3 Open and unverified
+
+- Whether `ai-hub-eap#26` still reproduces (below).
+- Whether the §6.2 capabilities exist under names we do not know. The probe's
+  `Interesting()` list includes our proposed names precisely so a run reports
+  their absence as data rather than leaving it assumed.
 
 **ai-hub-eap#26**: on 2026.3.0AI Build 126U a `%AI.Tool` that spawns a child
 agent never returns when the parent's own loop dispatches it — and only when the

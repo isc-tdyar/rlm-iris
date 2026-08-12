@@ -36,18 +36,30 @@ Every symbol appearing anywhere in the corpus, by mention count:
 | `%AI.Policy.Discovery` | 8 | `%AI.LLM.CompletionOptions` | 1 |
 | `%AI.Tools.FileSystem` | 7 | `%AI.Shell.Console` | 1 |
 
-## 2. Absent — and SPEC §6 plans around all three
+## 2. Three names with no provenance in this distribution
 
-`grep` over the entire corpus returns **zero** mentions of:
+`rg` over the entire corpus returns **zero** mentions of `%AI.Op` / `%AI.Op.Map`,
+`%AI.Env`, or `%AI.Context.Store`.
 
-- **`%AI.Op` / `%AI.Op.Map`** — SPEC §6 expects parallel fan-out to land here.
-- **`%AI.Env`** — SPEC §6 lists it under "Trainability".
-- **`%AI.Context.Store`** — SPEC §6 expects offloading, with a planned migration
-  ("`RLM.Source` results become handles; engine unchanged").
+Where they came from matters, because an earlier draft of this file described
+them as an "announced surface", which was unsupported. They entered this
+repository in `7465e3c` (2026-07-25, the scaffold commit) from what SPEC §0 calls
+"the AI Hub harness spec" — a document that *"asks the AI Hub team for core
+`%AI.*` additions"* and is **not in this repository**.
 
-They may exist undocumented, or be unreleased. Either way SPEC §6's compatibility
-table is planning against three things this distribution has no evidence of, and
-it should say so. The probe settles it on a real instance.
+So they are **capabilities we requested**, and the class names are most likely
+ours to propose rather than InterSystems' to publish. Three possibilities remain
+open and this distribution cannot separate them:
+
+1. The names were proposed in our ask and never adopted.
+2. The capabilities exist under different names.
+3. They are unreleased.
+
+Treated correctly, this is not evidence that AI Hub is missing something — it is
+evidence that a request was recorded in a spec as though it were a schedule.
+SPEC §6 has been regrouped by provenance accordingly, and the probe's
+`Interesting()` list carries the proposed names so a live run reports their
+absence as data.
 
 ## 3. Python / ObjectScript parity
 

@@ -192,14 +192,16 @@ Python one.
 `USER_GUIDE.md` is explicit — *"**Latency**: Nested calls are sequential"* — and
 `NestedAgents.ParallelDelegation()` is named for something its own comment
 disclaims: *"Tasks are executed sequentially but represent logically parallel
-concerns."* `%AI.Op` does not appear in the guide at all.
+concerns."* No fan-out or map operator appears in the guide at all.
 
 For decomposition this is the difference between usable and not. The academic
 budget model is about choosing batch shape per decision — `llm_query_batched`
 over N slices — which is meaningless if N children run one after another.
 
 - **FR-5** Concurrent execution of sibling children, width decided at runtime.
-  SPEC §6 expects `%AI.Op.Map` to be where this lands.
+  We asked for a parallel map operator in our own harness spec; nothing by that
+  description appears in this distribution, so this is a request rather than a
+  reminder.
 
 ## 6. Gap 4 — depth is invisible downstream
 
@@ -284,8 +286,9 @@ reads its context into a REPL variable too.
 IRIS does not have to. A context that is a global, a table or a result set, with
 the model's slicing running against the database, removes that ceiling entirely,
 and is the one thing this platform can do that no Python RLM can. It is not part
-of this request — `rlm-core` already works this way — but it is where `%AI.Context.Store`
-and a recursive agent would compose into something genuinely differentiated.
+of this request — `rlm-core` already works this way — but it is where context
+offloading and a recursive agent would compose into something genuinely
+differentiated.
 
 ## 10. Open questions
 
@@ -297,10 +300,13 @@ and a recursive agent would compose into something genuinely differentiated.
    already satisfied and undocumented.
 4. **`CreateSubAgent()` vs `%AI.Agent.SubAgent.Create()`** — two spellings appear
    across the guide and the samples. Are both supported, and is one preferred?
-5. **Is `%AI.Op.Map` intended to support nested maps** — a child that itself maps?
+5. **Is a parallel map / fan-out operator planned, and would it support nesting** —
+   a child that itself maps? We proposed one in our own harness spec; nothing by
+   that description appears in the shipped distribution, so we do not know whether
+   it was taken up or under what name.
 6. **Does the planned core trajectory record carry depth or parent?**
 7. **How are license slots accounted for concurrent children** — per agent
    instance, per session, or per process? AC-6 is written against instance count
    because we do not know.
-8. **Is there an intended interaction between depth and `%AI.Context.Store`?** A
-   child receiving a handle rather than a copy would make deep trees far cheaper.
+8. **Is context offloading planned, and would it interact with depth?** A child
+   receiving a handle rather than a copy would make deep trees far cheaper.

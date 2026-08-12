@@ -22,9 +22,14 @@ Class UnitTest.RLMAIHub.AgentProbe Extends %UnitTest.TestCase
 
 /// Classes whose shape the enhancement request depends on.
 ///
-/// `%AI.Agent` and `%AI.Tool` are the two named in `ai-hub-eap#26`. `%AI.Op.Map` is
-/// the operator SPEC §6 expects parallel fan-out to arrive on. The rest are listed
-/// because the ER's open questions ask whether they carry a depth dimension.
+/// `%AI.Agent` and `%AI.Tool` are the two named in `ai-hub-eap#26`.
+///
+/// `%AI.Op.Map`, `%AI.Env` and `%AI.Context.Store` are on the list for the opposite
+/// reason: they appear nowhere in the shipped `ai-core` distribution, and they came
+/// into our own spec from our own harness ask rather than from anything
+/// InterSystems published. Probing for a name we proposed is how "absent" becomes a
+/// recorded observation instead of an assumption -- and if one of them does resolve,
+/// that is worth knowing immediately.
 ClassMethod Interesting() As %List
 {
 	Quit $ListBuild("%AI.Agent", "%AI.Tool", "%AI.Op.Map", "%AI.Env",
