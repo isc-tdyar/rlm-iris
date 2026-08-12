@@ -18,18 +18,19 @@ stands on its own.
 ## 1. The ask
 
 AI Hub can already do recursive sub-agents in ObjectScript, and **nothing bounds
-the recursion**. `CreateSubAgent()` exists, a sub-agent can be given tools, and a
-sub-agent can therefore be given the tool that creates sub-agents — with no depth
-ceiling anywhere in the platform. The only control is prose in a Best Practices
-list: *"Keep nesting shallow — 2-3 levels max in most cases."*
+the recursion**. `CreateSubAgent()` returns a full agent, a full agent accepts
+`ToolManager.AddTool`, and a delegation tool is an ordinary `%AI.Tool` — so an
+agent can hold the tool that creates agents, with no depth ceiling anywhere in
+the platform. §3 gives a runnable reproduction. The only control today is prose
+in a Best Practices list: *"Keep nesting shallow — 2-3 levels max in most cases."*
 
 So the immediate request is a safety one: **make depth a platform-enforced
 quantity.** Alongside it, three parity gaps between the Python and ObjectScript
 bindings, and one unresolved defect.
 
 Two earlier drafts of this document asked for capability that already ships. The
-evidence below is why the ask is now narrower — and, because §1.1 explains what
-it unlocks, more worth doing than a bug fix.
+evidence in §2 is why the ask is now narrower — and, because §1.1 explains what
+it unlocks, why it is worth more than a bug fix.
 
 ## 1.1 Why this is worth more than a guard rail
 
@@ -63,30 +64,32 @@ operations does not have that problem: a finished run is a *dataset*. Offline
 policy comparison and imitation learning become possible where those systems need
 online rollouts.
 
-That is the strategic case. FR-1 through FR-3 are the safety floor; **FR-7 (depth
-on the trajectory and on outbound requests) is the one that turns AI Hub into
+That is the strategic case. FR-1 to FR-3 are the safety floor; **FR-8 (depth on
+the trajectory and on outbound requests) is the one that turns AI Hub into
 something trainable**, and it is cheap.
 
 ## 1.2 Requirements at a glance
 
+Listed in priority order, not numeric order.
+
 | FR | Ask | Why | Priority |
 | --- | --- | --- | --- |
-| 1 | Depth ceiling enforced by `%AI.*`, finite default | Recursion is currently unbounded | **P0 — safety** |
+| 12 | A sample giving a child a tool, dispatched from a parent loop | Settles whether `eap#26` still reproduces; unblocks everything else | **P0** |
+| 1 | Depth ceiling enforced by `%AI.*`, finite default | Recursion is currently unbounded (§3) | **P0 — safety** |
 | 2 | Depth readable by a child without prompt threading | Convention-threading fails open | **P0 — safety** |
+| 9 | License slots released on every exit path | The half of `eap#26` that outlives the run | **P0 — safety** |
+| 8 | Depth on the trajectory record and on outbound requests | **Makes recursive runs trainable and auditable** | **P0 — strategic** |
 | 3 | Ceiling behaviour selectable: refuse or degrade | Refuse is the safe default | P1 |
-| 7 | Depth on the trajectory record and on outbound requests | **Makes recursive runs trainable and auditable** | **P0 — strategic** |
-| 6 | One trajectory spanning the tree, entries carrying parent | Same reason; call graph must be reconstructable | P1 |
-| 8 | License slots released on every exit path | Half of `ai-hub-eap#26` outlives the run | **P0 — safety** |
-| 11 | A sample with a tool-bearing child dispatched from a parent loop | Settles whether `eap#26` still reproduces | **P0 — unblocks the rest** |
-| 12 | `DelegateTask` docstring and behaviour agree | It currently claims tools the child does not have | P1 — trivial |
+| 7 | One trajectory spanning the tree, entries carrying parent | Call graph must be reconstructable | P1 |
+| 13 | `DelegateTask` docstring and behaviour agree | It claims tools the child does not have | P1 — trivial |
 | 4 | ObjectScript RLM toolset gains sub-calls and a variable namespace | Python has both; ObjectScript has neither | P1 |
-| 4b | A `RunContext` equivalent for ObjectScript | Model-invisible tool arguments; Python-only today | P1 |
-| 5 | Concurrent sibling children, runtime-decided width | Nested calls are documented as sequential | P2 |
-| 9 | Cancellation propagates to descendants | | P2 |
-| 10 | A failed child distinguishable from an answer | `DelegateTask` returns errors as result strings | P2 |
+| 5 | A `RunContext` equivalent for ObjectScript | Model-invisible tool arguments; Python-only today | P1 |
+| 6 | Concurrent sibling children, runtime-decided width | Nested calls are documented as sequential | P2 |
+| 10 | Cancellation propagates to descendants | | P2 |
+| 11 | A failed child distinguishable from an answer | Errors return as ordinary result strings | P2 |
 
-If only three things are done: **FR-11** (settle the defect), **FR-1** (bound the
-recursion), **FR-7** (tag the depth).
+If only three things are done: **FR-12** (settle the defect), **FR-1** (bound the
+recursion), **FR-8** (tag the depth).
 
 ## 2. What already exists
 
@@ -135,13 +138,16 @@ active."*
 `current_context_tokens` — enough to build a budget on top.
 
 **Persistent sessions.** `%AI.Agent.Session` is `%Persistent` with incremental
-`%Save()`.
+`%Save()`, plus `AddCheckpoint` / `RestoreCheckpoint` / `ListCheckpoints`.
 
 **A governance surface that already fits what decomposition needs.**
 `ToolManager.SetAuthPolicy` / `SetAuditPolicy`, a `%AI.Policy.Discovery` whose
 `%Resolve()` filters the catalog *before the LLM sees it*, a `REQUIRESAUTH` class
 parameter, and tools addressed by URI (`iris:`, `rust:`, `mcp:stdio:`,
 `mcp:remote:`). Nothing is requested here; it is recorded so it is not asked for.
+(Noting only that `MCP_SERVER_GUIDE.md:611` marks the Discovery policy
+*"experimental and may change or be removed without a deprecation period"*, which
+makes it hard to build on.)
 
 **Caps already reported, not hidden.** Every `<Query>` tool returns:
 
@@ -171,39 +177,66 @@ That is a lot, and most of this request's original content is already met.
 ## 3. Gap 1 — recursion is unbounded (the safety issue)
 
 `grep -niE 'max.?depth|depth limit|recursion (limit|depth)'` over
-`USER_GUIDE.md` returns **nothing**. There is no depth parameter, no ceiling, no
-error. The only control is advice in a Best Practices list.
+`objectscript/` returns **nothing**. No depth parameter, no ceiling, no error —
+the only hits anywhere in that tree are "defence-in-depth" security phrasing.
 
-Combine that with §2 and the exposure is concrete: `CreateSubAgent()` returns a
-full agent, a full agent accepts `ToolManager.AddTool`, and `DelegateTask` is a
-tool. Handing a sub-agent a `DelegateTask` — which the guide's own Method 2
-pattern makes a two-line change — produces unbounded recursion, and each level
-holds a license slot and spends tokens. Nothing in the platform stops it.
+To be precise about what does and does not recurse today: the shipped
+`Sample.AI.Tools.DelegateTask` creates its child with `SubAgent.Create(..., "")`
+and adds no tools, so that child cannot delegate and the sample stops at one
+level. Nothing in the platform makes that the only option. Combining it with the
+Method 2 pattern above — **one line** — produces a tool that recurses forever:
+
+```objectscript
+Class MyApp.Tools.Delegate Extends %AI.Tool
+{
+Parameter DESCRIPTION = "Delegate a subtask to a specialist sub-agent.";
+Property ParentAgent As %AI.Agent;
+
+Method Execute(task As %String) As %String [ WebMethod ]
+{
+    Set child = ..ParentAgent.CreateSubAgent("You are a specialist. Delegate further if useful.")
+
+    // The only line that differs from Sample.AI.Tools.DelegateTask:
+    Set t = ##class(MyApp.Tools.Delegate).%New()
+    Set t.ParentAgent = child
+    Do child.ToolManager.AddTool(t)        // the child can now delegate too
+
+    Set session = child.CreateSession()
+    Quit child.Run(session, task).Content
+}
+}
+```
+
+Each level holds a license slot and spends tokens, and nothing stops it. This is
+not an exotic construction — it is the shipped sample plus the documented way to
+give a sub-agent a tool.
 
 **The four guards in §2 do not bound a tree, and recursion makes each of them
 weaker rather than stronger.** Every one is scoped to a single agent's loop:
 
-- `MaxIterations` is *inherited* by a child, so each level gets a fresh
-  allowance of the same size. Ten levels is ten times the turns, not ten of them.
+- `MaxIterations` is *inherited* by a child, so each level gets a fresh allowance
+  of the same size. Ten levels is ten times the turns, not ten of them.
 - `max_iterations` and `timeout_ms` live on a **session**, and a child calls
   `CreateSession()` for its own. A parent's 60-second deadline does not constrain
   a child that starts its own clock.
 - Loop detection watches for repeated tool calls **within** a conversation. Each
-  level of a recursion is a distinct agent with a distinct session issuing a
-  legitimately different call, so there is no repetition for it to see.
+  level is a distinct agent with a distinct session issuing a legitimately
+  different call, so there is no repetition for it to see.
 
 That is the shape of the gap: the platform is carefully guarded along the
 iteration axis and entirely unguarded along the depth axis, and the guards it has
 multiply with depth instead of composing. A recursion that is well-behaved at
 every individual level can still consume the instance.
 
-Python bounds this in `RLMToolSet` rather than in `%AI.*`, which means the bound
-is per-example: every caller reimplements it, and every reimplementation is a
-chance to omit it. In ObjectScript nobody has implemented it at all.
+Python bounds this in `RLMToolSet` rather than in `%AI.*` — `DEFAULT_MAX_DEPTH=5`,
+`MIN=1`, `MAX=8`, range-validated, incremented per spawn, enforced at two sites,
+unit-tested. That is the right model; the problem is that it lives in an example,
+so every caller reimplements it and every reimplementation is a chance to omit
+it. In ObjectScript nobody has implemented it at all.
 
-- **FR-1** A depth ceiling settable on an agent and enforced by `%AI.*`, defaulting
-  to something finite — the depth-axis counterpart to `MaxIterations`, and ideally
-  a subtree-wide `timeout_ms` and token budget that a child inherits a *remaining*
+- **FR-1** A depth ceiling settable on an agent and enforced by `%AI.*`, with a
+  finite default — the depth-axis counterpart to `MaxIterations`, and ideally a
+  subtree-wide `timeout_ms` and token budget that a child inherits a *remaining*
   share of rather than a fresh copy of.
 - **FR-2** Depth readable by a child without the caller threading it through a
   prompt. Threading by convention means any entry point that forgets recurses
@@ -213,8 +246,6 @@ chance to omit it. In ObjectScript nobody has implemented it at all.
   toolset truncates.
 
 ## 4. Gap 2 — the ObjectScript RLM toolset is not recursive
-
-Compare the two shipped RLM toolsets:
 
 | | Python `RLMToolSet` | ObjectScript `Sample.AI.Tools.RLM` |
 |---|---|---|
@@ -228,8 +259,7 @@ The ObjectScript version is context search with a notes list. It is not an RLM:
 there is no sub-call and no variable namespace, which are two of the four
 primitives the formulation needs.
 
-`Sample.AI.Examples.RLMBridge` is the acknowledgement of this. Its entire method
-is:
+`Sample.AI.Examples.RLMBridge` is the acknowledgement. Its entire method is:
 
 ```objectscript
 Set rc = $ZF(-100, "/bin/sh", "-lc", "cd ... && python python/rlm/run_rlm_demo.py ...")
@@ -240,48 +270,67 @@ Python one.
 
 - **FR-4** `Sample.AI.Tools.RLM` gains `spawn_subagent` and a named-variable
   namespace, so the two bindings demonstrate the same pattern.
-- **FR-4b** An ObjectScript equivalent of Python's `RunContext[T]`. A tool
-  parameter typed as `RunContext` carries per-request data and is *"excluded from
-  the LLM tool schema"* — the model can neither see nor author it. That is this
-  package's Constitution II at the platform level, and ObjectScript has nothing
-  like it: a tool needing a slice predicate, a source handle or a tenant id must
-  take it as a model-visible argument or hold it as instance state. Python has 40
-  references to `RunContext` and 54 to `deps`; the ObjectScript tree has zero.
-  `ModelRetry` and structured output are absent on the same side.
 
-## 5. Gap 3 — fan-out is sequential
+## 5. Gap 3 — no way to pass a tool an argument the model cannot see
+
+Python tools may take a `RunContext[T]` parameter carrying per-request data, and
+*"`RunContext[T]` parameters are **excluded** from the LLM tool schema"* — the
+model can neither see it nor author it. Python has 40 references to `RunContext`
+and 54 to `deps`; the ObjectScript tree has **zero**. `ModelRetry` (36 refs) and
+structured output (41 refs) are absent on the same side.
+
+This matters more than a convenience gap. An ObjectScript tool that needs a slice
+predicate, a source handle, a tenant id or a row cap must either accept it as a
+model-visible argument — where the model can rewrite it — or hold it as instance
+state on a stateful tool, which the shell tool's documentation already warns is
+fragile behind a CSP job pool. There is no supported way to say *"this argument
+is the caller's, not the model's."*
+
+For any workload where a tool argument is a security boundary, that is the
+difference between a scoped call and a suggestion.
+
+- **FR-5** An ObjectScript equivalent of `RunContext[T]`: tool parameters that
+  carry caller-supplied data and are excluded from the generated tool schema.
+
+## 6. Gap 4 — fan-out is sequential
 
 `USER_GUIDE.md` is explicit — *"**Latency**: Nested calls are sequential"* — and
 `NestedAgents.ParallelDelegation()` is named for something its own comment
 disclaims: *"Tasks are executed sequentially but represent logically parallel
 concerns."* No fan-out or map operator appears in the guide at all.
 
-For decomposition this is the difference between usable and not. The academic
-budget model is about choosing batch shape per decision — `llm_query_batched`
-over N slices — which is meaningless if N children run one after another.
+For decomposition this is the difference between usable and not. The RLM budget
+model is about choosing batch shape per decision — many slices examined at once —
+which is meaningless if N children run one after another.
 
-- **FR-5** Concurrent execution of sibling children, width decided at runtime.
-  Nothing by that description appears in the distribution, so this is a request
-  rather than a reminder.
+- **FR-6** Concurrent execution of sibling children, width decided at runtime.
 
-## 6. Gap 4 — depth is invisible downstream
+## 7. Gap 5 — depth is invisible downstream
 
-- **FR-6** One trajectory record spanning the tree, each entry carrying depth and
-  parent. `session.GetStats()` gives `total_interactions` and `total_tool_calls`
-  for one session; a parent cannot learn its subtree's total.
-- **FR-7** Depth visible on outbound provider traffic. `rlm-harness` sets
+- **FR-7** One trajectory record spanning the tree, each entry carrying depth and
+  parent, so the call graph is reconstructable rather than inferred from
+  timestamps. `session.GetStats()` gives `total_interactions` and
+  `total_tool_calls` for one session; a parent cannot learn its subtree's total.
+- **FR-8** Depth visible on outbound provider traffic. `rlm-harness` sets
   `X-RLM-Depth` on every request so a proxy can separate root from sub-agent
-  calls — the property that makes recursive runs trainable and auditable.
-- **FR-8** License slots released on every exit path: completion, failure,
+  calls — the property that makes recursive runs trainable and auditable, and the
+  cheapest item in this document.
+
+## 8. Gap 6 — subtree lifecycle
+
+- **FR-9** License slots released on every exit path: completion, failure,
   cancellation, timeout, ceiling refusal.
-- **FR-9** Cancellation propagates to descendants.
-- **FR-10** A failed child is distinguishable from an answer. `DelegateTask`
+- **FR-10** Cancellation propagates to descendants.
+- **FR-11** A failed child is distinguishable from an answer. `DelegateTask`
   returns `"Error in delegation: " _ ex.DisplayString()` as its result string, so
-  a failure and a successful answer have the same type.
+  a failure and a successful answer have the same type and a caller cannot branch
+  on which it got.
 
-## 7. The unresolved defect
+## 9. The unresolved defect
 
-`ai-hub-eap#26`, which we last reproduced on **2026.3.0AI Build 126U**:
+`ai-hub-eap#26`. Our summary of the behaviour, last reproduced on **2026.3.0AI
+Build 126U** — please check this against the issue text, which we are
+paraphrasing:
 
 > A `%AI.Tool` that spawns a child agent never returns when the parent's own loop
 > dispatches it — **and only when the child has tools attached**. It also leaks
@@ -290,57 +339,52 @@ over N slices — which is meaningless if N children run one after another.
 Build 121 fixed the equivalent Python panic via `create_child_agent`, and
 `DelegateTask` cites `safe_block_on`, so the ObjectScript path may be fixed too.
 **No shipped ObjectScript sample enters the failing configuration**, so nothing
-demonstrates either way: `DelegateTask` creates its child with `""` and never adds
-a tool.
+demonstrates it either way: `DelegateTask` creates its child with `""` and never
+adds a tool.
 
 Two visible consequences of that gap:
 
 - `DelegateTask`'s docstring says the sub-agent *"can use the same tools as the
   parent."* It has none.
 - `NestedAgents.DeepDelegation()` advertises "Parent → Sub-agent → Sub-sub-agent"
-  and can reach two levels. Its child has no `delegate_task` tool, so there is
-  nothing to delegate with. It is also the one example `RunAll()` skips,
+  and can reach two levels, because its child has no `delegate_task` tool and so
+  has nothing to delegate with. It is also the one example `RunAll()` skips,
   attributed to cost.
 
-- **FR-11** A sample that gives a child a tool and dispatches it from a parent's
+- **FR-12** A sample that gives a child a tool and dispatches it from a parent's
   loop — proving the case, or reproducing the defect.
-- **FR-12** `DelegateTask`'s docstring and behaviour agree, either way.
+- **FR-13** `DelegateTask`'s docstring and behaviour agree, either way.
 
-## 8. Acceptance criteria
+## 10. Acceptance criteria
 
-- **AC-1** A tool-bearing ObjectScript child, dispatched from a parent's tool loop,
-  returns. *(§7)*
-- **AC-2** A three-level tree completes with every level holding a tool — i.e.
-  `DeepDelegation()` does what it documents.
-- **AC-3** A ceiling of 2 stops the third level with a distinct error, and the run
-  completes rather than hanging. *(FR-1)*
-- **AC-4** With no ceiling configured, a self-delegating sub-agent terminates on a
-  platform default rather than running until the license pool is exhausted.
-- **AC-4b** A parent with `timeout_ms = 60000` that spawns children does not exceed
-  60s of wall clock in total — i.e. a child inherits the remaining budget rather
-  than starting a fresh one. *(The current behaviour is believed to be the
-  opposite; this AC is written to make that explicit either way.)*
-- **AC-5** A root fanning out to 50 children completes, wall-clock materially below
-  the sequential sum. *(FR-5)*
-- **AC-6** After AC-1–AC-5, license-slot count returns to its pre-run value; 100
-  iterations show no monotonic growth. *(FR-8)*
-- **AC-7** One child of a 20-child fan-out throws; the parent receives 19 results
-  and one failure, distinguishable from an answer. *(FR-10)*
-- **AC-8** Cancelling the root returns within a bounded interval and releases every
-  descendant's slot. *(FR-9)*
-- **AC-9** The trajectory for AC-2 reconstructs the tree; every entry resolves to
-  its parent and carries depth. *(FR-6)*
-- **AC-10** Requests from depth 0 are distinguishable from depth ≥ 1 without
-  inspecting prompt content. *(FR-7)*
+Every FR has at least one. Reproducible without any of our code.
+
+| AC | Criterion | Covers |
+|---|---|---|
+| 1 | A tool-bearing ObjectScript child, dispatched from a parent's tool loop, returns | FR-12 |
+| 2 | A three-level tree completes, every level holding a tool — i.e. `DeepDelegation()` does what it documents | FR-12, FR-13 |
+| 3 | A ceiling of 2 stops the third level with a distinct error, and the run completes rather than hanging | FR-1, FR-3 |
+| 4 | With no ceiling configured, the §3 recursion terminates on a platform default rather than exhausting the license pool | FR-1 |
+| 5 | A child can read its own depth without the parent putting it in a prompt | FR-2 |
+| 6 | A parent with `timeout_ms = 60000` that spawns children does not exceed 60s of wall clock in total — a child inherits the remaining budget, not a fresh one | FR-1 |
+| 7 | With the ceiling set to degrade rather than refuse, the run completes with a plain completion at the deepest level | FR-3 |
+| 8 | An ObjectScript RLM toolset run performs a sub-call and stores and retrieves a named variable | FR-4 |
+| 9 | A tool declares a caller-supplied parameter; the generated tool schema sent to the model does not contain it | FR-5 |
+| 10 | A root fanning out to 50 children completes, wall-clock materially below the sequential sum | FR-6 |
+| 11 | The trajectory for AC-2 reconstructs the tree; every entry resolves to its parent and carries depth | FR-7 |
+| 12 | Requests from depth 0 are distinguishable from depth ≥ 1 without inspecting prompt content | FR-8 |
+| 13 | After AC-1–AC-12, license-slot count returns to its pre-run value; 100 iterations show no monotonic growth | FR-9 |
+| 14 | Cancelling the root returns within a bounded interval and releases every descendant's slot | FR-10 |
+| 15 | One child of a 20-child fan-out throws; the parent receives 19 results and one failure, distinguishable from an answer | FR-11 |
 
 **A probe is available on request.** We have a read-only ObjectScript class that
 reports every `%AI.*` class on a live instance with full method signatures, read
 from `%Dictionary.CompiledClass`/`CompiledMethod` — it calls nothing, spends no
-license slot, and cannot hang, which matters because the defect in §7 is a hang.
+license slot, and cannot hang, which matters because the defect in §9 is a hang.
 Happy to hand it over if it would speed up settling AC-1 and the open questions
 below.
 
-## 9. One observation, offered rather than requested
+## 11. One observation, offered rather than requested
 
 `Sample.AI.Tools.RLM` holds its context as `Property Context As %String(MAXLEN = "")`,
 and Python's holds it in process memory. Both therefore bound the context by RAM,
@@ -349,23 +393,21 @@ reads its context into a REPL variable too.
 
 IRIS does not have to. A context that is a global, a table or a result set, with
 the model's slicing running against the database, removes that ceiling entirely,
-and is the one thing this platform can do that no Python RLM can — the MIT
-reference library reads its context into a REPL variable, and so must anything
-built the same way.
+and is the one thing this platform can do that no Python RLM can.
 
 We have this working outside `%AI.*` today, over SQL extents and schema-less
 globals, which is what makes us confident it is worth building into the platform
 rather than around it. Not part of this request; noted because a recursive agent
-plus a context that lives in the database is a combination nobody else can
-ship.
+plus a context that lives in the database is a combination nobody else can ship.
 
-## 10. Open questions
+## 12. Open questions
 
-1. **Does `ai-hub-eap#26` still reproduce?** The single most valuable answer here.
+1. **Does `ai-hub-eap#26` still reproduce?** The single most valuable answer here,
+   and AC-1 settles it.
 2. **Is there any depth guard we have missed** — in `%AI.Agent`, `ToolManager`, or
    the runtime — that `USER_GUIDE.md` does not document?
 3. **What is `%AI.Agent.SubAgent.Create`'s third parameter?** Every sample passes
-   `""` with "No additional config for now". If it takes a toolset, FR-4 is
+   `""` with "No additional config for now". If it takes a toolset, part of §9 is
    already satisfied and undocumented.
 4. **`CreateSubAgent()` vs `%AI.Agent.SubAgent.Create()`** — two spellings appear
    across the guide and the samples. Are both supported, and is one preferred?
@@ -374,7 +416,24 @@ ship.
    distribution.
 6. **Does the planned core trajectory record carry depth or parent?**
 7. **How are license slots accounted for concurrent children** — per agent
-   instance, per session, or per process? AC-6 is written against instance count
+   instance, per session, or per process? AC-13 is written against instance count
    because we do not know.
 8. **Is context offloading planned, and would it interact with depth?** A child
    receiving a handle rather than a copy would make deep trees far cheaper.
+
+## 13. What we are asking for
+
+Not a commitment to all thirteen. Concretely, and in order:
+
+1. **Confirm or refute §9** by running AC-1 on a current build. That is one
+   afternoon and it decides whether the rest of this is a design conversation or a
+   bug fix plus a design conversation.
+2. **Tell us whether FR-1 and FR-2 are already possible** under names or
+   mechanisms `USER_GUIDE.md` does not cover. Two of our three P0s may be
+   documentation rather than code.
+3. **A view on FR-8.** It is the cheapest item here and the one with the largest
+   downstream consequence, and we would like to know whether it is contentious
+   before arguing for it further.
+
+We are happy to write and contribute the ObjectScript samples in FR-4, FR-12 and
+FR-13 if that is useful — they are the parts we can do from outside the platform.
