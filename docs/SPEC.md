@@ -229,6 +229,13 @@ above. The constraint buys the evaluation story.
 
 Designed so each AI Hub addition **replaces an internal, not an interface**:
 
+> **Three of these had not arrived as of `ai-core` @ `994c8f1` (2026-08-07).**
+> `%AI.Op`, `%AI.Env` and `%AI.Context.Store` appear nowhere in that
+> distribution — not in either user guide, not in the samples, not in the Python
+> tree. The rows below are therefore planning against an announced surface rather
+> than an observed one, and should be read that way until the probe says
+> otherwise. [AIHUB-SURVEY.md](AIHUB-SURVEY.md) records what is actually present.
+
 | AI Hub addition                | What we do now                           | On arrival                                                          |
 | ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------- |
 | `%AI.Context.Store` offloading | Peeks already bounded; no offload needed | `RLM.Source` results become handles; engine unchanged               |

@@ -178,6 +178,14 @@ Python one.
 
 - **FR-4** `Sample.AI.Tools.RLM` gains `spawn_subagent` and a named-variable
   namespace, so the two bindings demonstrate the same pattern.
+- **FR-4b** An ObjectScript equivalent of Python's `RunContext[T]`. A tool
+  parameter typed as `RunContext` carries per-request data and is *"excluded from
+  the LLM tool schema"* — the model can neither see nor author it. That is this
+  package's Constitution II at the platform level, and ObjectScript has nothing
+  like it: a tool needing a slice predicate, a source handle or a tenant id must
+  take it as a model-visible argument or hold it as instance state. Python has 40
+  references to `RunContext` and 54 to `deps`; the ObjectScript tree has zero.
+  `ModelRetry` and structured output are absent on the same side.
 
 ## 5. Gap 3 — fan-out is sequential
 
