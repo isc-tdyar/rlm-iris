@@ -3,6 +3,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Defaults to the Docker Hub community image. Point it at a WRC-obtained
+        # AI Hub build to compile the RLMAIHub package and run its probe:
+        #   IRIS_IMAGE=containers.intersystems.com/intersystems/iris:2026.3AI... \
+        #     docker compose build
+        # The community image has no %AI.*, so RLMAIHub.Provider is skipped at
+        # compile time and the rlm-core suite runs green regardless.
+        IMAGE: ${IRIS_IMAGE:-intersystems/iris-community:latest-em}
     container_name: rlm-iris
     image: rlm-iris
     init: true
