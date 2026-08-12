@@ -2,3 +2,8 @@
 *.log
 data/out/
 .env
+
+# Licence keys. A container key is a credential and an EAP key is a
+# time-limited one, so neither belongs in history even after it expires.
+*.key
+iris.key
