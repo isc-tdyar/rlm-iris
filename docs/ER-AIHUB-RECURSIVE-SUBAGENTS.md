@@ -56,12 +56,45 @@ runtime contexts."*
 **Automatic compaction.** `agent.AutoCompactOnTokenLimit = 1`, inherited by
 children.
 
+**Four independent guards on a single agent's loop** — this matters for §3:
+
+| Guard | Scope | Default |
+|---|---|---|
+| `%AI.Agent.MaxIterations` | outer `Run()` turns | 10 |
+| `max_iterations` in `CreateSession` | inner tool rounds per `Chat()` | 10, `0` disables |
+| `timeout_ms` in `CreateSession` | wall clock for the agentic loop | none |
+| Loop detection | always on; strategy nudge, then `LoopDetected` | n/a |
+
+Loop detection is genuinely good: it notices tool calls that stop producing new
+information, nudges first, and errors second, which is why the guide can say
+*"setting `max_iterations = 0` is safe precisely because loop detection is always
+active."*
+
 **Iteration callbacks.** `OnIterationStart(iteration, maxIter, session)` /
 `OnIterationComplete`, with `session.GetStats()` exposing
-`current_context_tokens` — enough to build a budget or timeout on top.
+`current_context_tokens` — enough to build a budget on top.
 
 **Persistent sessions.** `%AI.Agent.Session` is `%Persistent` with incremental
 `%Save()`.
+
+**A governance surface that already fits this package's needs.**
+`ToolManager.SetAuthPolicy` / `SetAuditPolicy`, a `%AI.Policy.Discovery` whose
+`%Resolve()` filters the catalog *before the LLM sees it*, a `REQUIRESAUTH` class
+parameter, and tools addressed by URI (`iris:`, `rust:`, `mcp:stdio:`,
+`mcp:remote:`). Nothing is requested here; it is recorded so it is not asked for.
+
+**Caps already reported, not hidden.** Every `<Query>` tool returns:
+
+```json
+{"rows": [...], "row_count": 25, "truncated": false, "elapsed_ms": 12}
+```
+
+> `truncated: true` means the result was capped by the row limit. The LLM can use
+> this as a signal to narrow the query.
+
+That is `rlm-core`'s Constitution II — *caps are reported, never hidden* —
+arrived at independently. The two designs agree on the invariant, which is worth
+saying because the rest of this document is about a disagreement.
 
 **Python has the full RLM shape.** `create_child_agent(model, provider)` shares
 the parent's tokio runtime (Build 121+, fixing the `cannot call block_on inside a
@@ -85,16 +118,31 @@ tool. Handing a sub-agent a `DelegateTask` — which the guide's own Method 2
 pattern makes a two-line change — produces unbounded recursion, and each level
 holds a license slot and spends tokens. Nothing in the platform stops it.
 
-`MaxIterations` does not help. It bounds one agent's tool loop, not the depth of
-the tree, and it is *inherited* by children, so every level gets its own fresh
-allowance.
+**The four guards in §2 do not bound a tree, and recursion makes each of them
+weaker rather than stronger.** Every one is scoped to a single agent's loop:
+
+- `MaxIterations` is *inherited* by a child, so each level gets a fresh
+  allowance of the same size. Ten levels is ten times the turns, not ten of them.
+- `max_iterations` and `timeout_ms` live on a **session**, and a child calls
+  `CreateSession()` for its own. A parent's 60-second deadline does not constrain
+  a child that starts its own clock.
+- Loop detection watches for repeated tool calls **within** a conversation. Each
+  level of a recursion is a distinct agent with a distinct session issuing a
+  legitimately different call, so there is no repetition for it to see.
+
+That is the shape of the gap: the platform is carefully guarded along the
+iteration axis and entirely unguarded along the depth axis, and the guards it has
+multiply with depth instead of composing. A recursion that is well-behaved at
+every individual level can still consume the instance.
 
 Python bounds this in `RLMToolSet` rather than in `%AI.*`, which means the bound
 is per-example: every caller reimplements it, and every reimplementation is a
 chance to omit it. In ObjectScript nobody has implemented it at all.
 
 - **FR-1** A depth ceiling settable on an agent and enforced by `%AI.*`, defaulting
-  to something finite.
+  to something finite — the depth-axis counterpart to `MaxIterations`, and ideally
+  a subtree-wide `timeout_ms` and token budget that a child inherits a *remaining*
+  share of rather than a fresh copy of.
 - **FR-2** Depth readable by a child without the caller threading it through a
   prompt. Threading by convention means any entry point that forgets recurses
   unbounded.
@@ -197,6 +245,10 @@ Two visible consequences of that gap:
   completes rather than hanging. *(FR-1)*
 - **AC-4** With no ceiling configured, a self-delegating sub-agent terminates on a
   platform default rather than running until the license pool is exhausted.
+- **AC-4b** A parent with `timeout_ms = 60000` that spawns children does not exceed
+  60s of wall clock in total — i.e. a child inherits the remaining budget rather
+  than starting a fresh one. *(The current behaviour is believed to be the
+  opposite; this AC is written to make that explicit either way.)*
 - **AC-5** A root fanning out to 50 children completes, wall-clock materially below
   the sequential sum. *(FR-5)*
 - **AC-6** After AC-1–AC-5, license-slot count returns to its pre-run value; 100
