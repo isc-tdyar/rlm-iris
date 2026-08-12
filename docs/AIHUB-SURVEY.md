@@ -42,24 +42,17 @@ Every symbol appearing anywhere in the corpus, by mention count:
 `%AI.Env`, or `%AI.Context.Store`.
 
 Where they came from matters, because an earlier draft of this file described
-them as an "announced surface", which was unsupported. They entered this
-repository in `7465e3c` (2026-07-25, the scaffold commit) from what SPEC §0 calls
-"the AI Hub harness spec" — a document that *"asks the AI Hub team for core
-`%AI.*` additions"* and is **not in this repository**.
+them as an "announced surface", which was unsupported. They entered in `7465e3c`
+(2026-07-25, the scaffold commit) alongside a reference to an "AI Hub harness
+spec" that no one has been able to produce — so the names are best read as
+**our own proposals**, never adopted by anyone, rather than as anything
+InterSystems published. Both references have since been removed from SPEC.
 
-So they are **capabilities we requested**, and the class names are most likely
-ours to propose rather than InterSystems' to publish. Three possibilities remain
-open and this distribution cannot separate them:
-
-1. The names were proposed in our ask and never adopted.
-2. The capabilities exist under different names.
-3. They are unreleased.
-
-Treated correctly, this is not evidence that AI Hub is missing something — it is
-evidence that a request was recorded in a spec as though it were a schedule.
-SPEC §6 has been regrouped by provenance accordingly, and the probe's
-`Interesting()` list carries the proposed names so a live run reports their
-absence as data.
+This is therefore not evidence that AI Hub is missing something. It is evidence
+that a wish list was written down as though it were a schedule. SPEC §6 is now
+grouped by what is verifiable, and the probe's `Interesting()` list still carries
+the three names so that a live run records their absence as an observation — and
+resolves it immediately if one of them does turn out to exist.
 
 ## 3. Python / ObjectScript parity
 

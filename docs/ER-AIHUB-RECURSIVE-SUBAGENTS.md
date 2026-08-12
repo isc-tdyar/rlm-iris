@@ -1,14 +1,17 @@
-# Enhancement Request: bounded recursive sub-agent fan-out in AI Hub
+# Enhancement Request: bounded recursive sub-agents in AI Hub
 
 **To:** InterSystems AI Hub team
 **From:** Thomas Dyar
-**Date:** 2026-08-09 · **Revised** 2026-08-12 against `ai-core` @ `994c8f1`
+**Date:** 2026-08-09 · **Revised** 2026-08-12
 **Target:** `%AI.*` core, post-2026.3AI
-**Related:** `ai-hub-eap#26` · [`docs/SPEC.md` §6](SPEC.md) · `rlm-aihub`
+**Related defect:** `ai-hub-eap#26`
 
-**Evidence:** `objectscript/USER_GUIDE.md` §Sub-Agents · `Sample.AI.Examples.NestedAgents` ·
-`Sample.AI.Tools.DelegateTask` · `Sample.AI.Tools.RLM` · `Sample.AI.Examples.RLMBridge` ·
-`python/rlm/toolset.py` · `tests/test_rlm_child_agent.py`
+**Every claim below is cited from the `ai-core` distribution @ `994c8f1`
+(2026-08-07)** — `objectscript/USER_GUIDE.md`, `python/PYTHON_USER_GUIDE.md`,
+`Sample.AI.Examples.NestedAgents`, `Sample.AI.Tools.DelegateTask`,
+`Sample.AI.Tools.RLM`, `Sample.AI.Examples.RLMBridge`, `python/rlm/toolset.py`,
+`tests/test_rlm_child_agent.py`. No prior context is assumed; this document
+stands on its own.
 
 ---
 
@@ -17,16 +20,73 @@
 AI Hub can already do recursive sub-agents in ObjectScript, and **nothing bounds
 the recursion**. `CreateSubAgent()` exists, a sub-agent can be given tools, and a
 sub-agent can therefore be given the tool that creates sub-agents — with no depth
-ceiling anywhere in the platform. The guidance is prose: *"Keep nesting shallow —
-2-3 levels max in most cases."*
+ceiling anywhere in the platform. The only control is prose in a Best Practices
+list: *"Keep nesting shallow — 2-3 levels max in most cases."*
 
-So the primary request is a safety one: **make depth a platform-enforced
-quantity.** Secondary to it, three parity gaps between the Python and ObjectScript
+So the immediate request is a safety one: **make depth a platform-enforced
+quantity.** Alongside it, three parity gaps between the Python and ObjectScript
 bindings, and one unresolved defect.
 
-Two earlier drafts of this document were wrong in the same direction — they asked
-for capability that already ships. The evidence below is why the ask is now
-narrower and, I think, more urgent.
+Two earlier drafts of this document asked for capability that already ships. The
+evidence below is why the ask is now narrower — and, because §1.1 explains what
+it unlocks, more worth doing than a bug fix.
+
+## 1.1 Why this is worth more than a guard rail
+
+Recursive decomposition is the dominant scaffold for long-context and
+long-horizon agent work — the Recursive Language Model formulation (Zhang, Kraska
+and Khattab, MIT CSAIL, [arXiv:2512.24601](https://arxiv.org/abs/2512.24601)),
+Prime Intellect's `rlm-harness`, and their Prime Agent product all converge on the
+same structure, and AI Hub's own `python/rlm/` example implements it. The platform
+has already accepted the premise.
+
+The part worth noticing is what recursion plus a trajectory record makes possible.
+**An agent platform becomes a *trainable harness* when it can (a) run the
+recursive pattern — depth-bounded sub-agents with runtime-decided fan-out — and
+(b) emit a depth-tagged trajectory whose reward is computable offline.**
+
+AI Hub is unusually close to (b) already: sessions are `%Persistent` with
+incremental save, `GetStats()` exposes per-iteration token counts, and iteration
+callbacks give a hook per turn. What is missing is the **depth dimension** — a
+trajectory that cannot be separated by level cannot be filtered, credited, or
+trained on. `rlm-harness` treats this as non-negotiable and sets `X-RLM-Depth` on
+every outbound request precisely so a proxy can tell a root call from a
+sub-agent call.
+
+And AI Hub has a structural advantage over every published RLM here, which is
+worth stating because it is not obvious. Prime Agent and `rlm-harness` put the
+model in a Python REPL, so a trajectory depends on code the model wrote and cannot
+be re-scored without re-running against a live model — which is exactly why
+`verifiers` has no offline training path and `prime-rl` requires the live policy's
+own sampling logprobs. A tool-call trajectory over enumerated, replayable
+operations does not have that problem: a finished run is a *dataset*. Offline
+policy comparison and imitation learning become possible where those systems need
+online rollouts.
+
+That is the strategic case. FR-1 through FR-3 are the safety floor; **FR-7 (depth
+on the trajectory and on outbound requests) is the one that turns AI Hub into
+something trainable**, and it is cheap.
+
+## 1.2 Requirements at a glance
+
+| FR | Ask | Why | Priority |
+| --- | --- | --- | --- |
+| 1 | Depth ceiling enforced by `%AI.*`, finite default | Recursion is currently unbounded | **P0 — safety** |
+| 2 | Depth readable by a child without prompt threading | Convention-threading fails open | **P0 — safety** |
+| 3 | Ceiling behaviour selectable: refuse or degrade | Refuse is the safe default | P1 |
+| 7 | Depth on the trajectory record and on outbound requests | **Makes recursive runs trainable and auditable** | **P0 — strategic** |
+| 6 | One trajectory spanning the tree, entries carrying parent | Same reason; call graph must be reconstructable | P1 |
+| 8 | License slots released on every exit path | Half of `ai-hub-eap#26` outlives the run | **P0 — safety** |
+| 11 | A sample with a tool-bearing child dispatched from a parent loop | Settles whether `eap#26` still reproduces | **P0 — unblocks the rest** |
+| 12 | `DelegateTask` docstring and behaviour agree | It currently claims tools the child does not have | P1 — trivial |
+| 4 | ObjectScript RLM toolset gains sub-calls and a variable namespace | Python has both; ObjectScript has neither | P1 |
+| 4b | A `RunContext` equivalent for ObjectScript | Model-invisible tool arguments; Python-only today | P1 |
+| 5 | Concurrent sibling children, runtime-decided width | Nested calls are documented as sequential | P2 |
+| 9 | Cancellation propagates to descendants | | P2 |
+| 10 | A failed child distinguishable from an answer | `DelegateTask` returns errors as result strings | P2 |
+
+If only three things are done: **FR-11** (settle the defect), **FR-1** (bound the
+recursion), **FR-7** (tag the depth).
 
 ## 2. What already exists
 
@@ -77,7 +137,7 @@ active."*
 **Persistent sessions.** `%AI.Agent.Session` is `%Persistent` with incremental
 `%Save()`.
 
-**A governance surface that already fits this package's needs.**
+**A governance surface that already fits what decomposition needs.**
 `ToolManager.SetAuthPolicy` / `SetAuditPolicy`, a `%AI.Policy.Discovery` whose
 `%Resolve()` filters the catalog *before the LLM sees it*, a `REQUIRESAUTH` class
 parameter, and tools addressed by URI (`iris:`, `rust:`, `mcp:stdio:`,
@@ -92,9 +152,11 @@ parameter, and tools addressed by URI (`iris:`, `rust:`, `mcp:stdio:`,
 > `truncated: true` means the result was capped by the row limit. The LLM can use
 > this as a signal to narrow the query.
 
-That is `rlm-core`'s Constitution II — *caps are reported, never hidden* —
-arrived at independently. The two designs agree on the invariant, which is worth
-saying because the rest of this document is about a disagreement.
+We hold the same rule as a design invariant in our own decomposition engine —
+*caps are reported, never hidden*, because a model that reads a truncated count as
+a total inherits the error into every downstream claim. Arriving at it
+independently is a good sign, and worth saying because the rest of this document
+is about disagreements.
 
 **Python has the full RLM shape.** `create_child_agent(model, provider)` shares
 the parent's tokio runtime (Build 121+, fixing the `cannot call block_on inside a
@@ -199,9 +261,8 @@ budget model is about choosing batch shape per decision — `llm_query_batched`
 over N slices — which is meaningless if N children run one after another.
 
 - **FR-5** Concurrent execution of sibling children, width decided at runtime.
-  We asked for a parallel map operator in our own harness spec; nothing by that
-  description appears in this distribution, so this is a request rather than a
-  reminder.
+  Nothing by that description appears in the distribution, so this is a request
+  rather than a reminder.
 
 ## 6. Gap 4 — depth is invisible downstream
 
@@ -220,7 +281,7 @@ over N slices — which is meaningless if N children run one after another.
 
 ## 7. The unresolved defect
 
-`ai-hub-eap#26`, recorded in SPEC §6 and re-confirmed on Build 126U during M5:
+`ai-hub-eap#26`, which we last reproduced on **2026.3.0AI Build 126U**:
 
 > A `%AI.Tool` that spawns a child agent never returns when the parent's own loop
 > dispatches it — **and only when the child has tools attached**. It also leaks
@@ -272,9 +333,12 @@ Two visible consequences of that gap:
 - **AC-10** Requests from depth 0 are distinguishable from depth ≥ 1 without
   inspecting prompt content. *(FR-7)*
 
-`UnitTest.RLMAIHub.AgentProbe` in this repository reports the real signatures on
-any instance without calling anything — see
-[AIHUB-PROBE-RUNBOOK.md](AIHUB-PROBE-RUNBOOK.md).
+**A probe is available on request.** We have a read-only ObjectScript class that
+reports every `%AI.*` class on a live instance with full method signatures, read
+from `%Dictionary.CompiledClass`/`CompiledMethod` — it calls nothing, spends no
+license slot, and cannot hang, which matters because the defect in §7 is a hang.
+Happy to hand it over if it would speed up settling AC-1 and the open questions
+below.
 
 ## 9. One observation, offered rather than requested
 
@@ -285,10 +349,15 @@ reads its context into a REPL variable too.
 
 IRIS does not have to. A context that is a global, a table or a result set, with
 the model's slicing running against the database, removes that ceiling entirely,
-and is the one thing this platform can do that no Python RLM can. It is not part
-of this request — `rlm-core` already works this way — but it is where context
-offloading and a recursive agent would compose into something genuinely
-differentiated.
+and is the one thing this platform can do that no Python RLM can — the MIT
+reference library reads its context into a REPL variable, and so must anything
+built the same way.
+
+We have this working outside `%AI.*` today, over SQL extents and schema-less
+globals, which is what makes us confident it is worth building into the platform
+rather than around it. Not part of this request; noted because a recursive agent
+plus a context that lives in the database is a combination nobody else can
+ship.
 
 ## 10. Open questions
 
@@ -301,9 +370,8 @@ differentiated.
 4. **`CreateSubAgent()` vs `%AI.Agent.SubAgent.Create()`** — two spellings appear
    across the guide and the samples. Are both supported, and is one preferred?
 5. **Is a parallel map / fan-out operator planned, and would it support nesting** —
-   a child that itself maps? We proposed one in our own harness spec; nothing by
-   that description appears in the shipped distribution, so we do not know whether
-   it was taken up or under what name.
+   a child that itself maps? Nothing by that description appears in the shipped
+   distribution.
 6. **Does the planned core trajectory record carry depth or parent?**
 7. **How are license slots accounted for concurrent children** — per agent
    instance, per session, or per process? AC-6 is written against instance count

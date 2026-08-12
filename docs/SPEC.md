@@ -2,11 +2,11 @@
 
 **Working name:** `rlm-iris` · OpenExchange package, IPM-installable
 **Status:** Draft v0.1
-**Relationship to the AI Hub harness spec:** that document asks the AI Hub team
-for core `%AI.*` additions (offloading store, LID renderer, scope-reduction,
-parallel operators, trainability). This document specifies what we ship **now**,
-on shipping IRIS, without waiting for any of it — and how each piece retires or
-adapts when those additions land.
+**Relationship to AI Hub:** this document specifies what we ship **now**, on
+shipping IRIS, depending on nothing that is not already released. §6 separates
+what AI Hub verifiably provides today from additions we would like it to grow,
+and every "today" column there is shipped, tested behaviour — so nothing here
+waits on anything there.
 
 ## 1. The claim
 
@@ -29,6 +29,55 @@ Two consequences follow, and they are the package's reason to exist:
 - **Governance has something to attach to.** A slice is a query against a table
   IRIS still controls, so access can be authorized and audited per slice. Once
   data is a REPL variable there is nothing left to authorize.
+
+### 1.1 The second claim: this is a trainable harness
+
+The first claim is about context. This one is about what the design buys after
+the run finishes, and it is the reason the constitutions in §5 are worth their
+cost.
+
+Because the model never authors code, **a peek is a pure function of the store**.
+Three things follow that no REPL-based RLM can have:
+
+- **Replay is free.** A trace plus the store reproduces a run exactly, with zero
+  model calls (`RLM.Replay`).
+- **Counterfactuals are free.** Every dimension the run did *not* choose can be
+  scored after the fact, at every decision point, again with zero model calls
+  (`RLM.Eval.Arms`). That is a reward signal over the whole action set, not just
+  the arm that was taken.
+- **The objective is computable offline** (`RLM.Eval.Scorecard`).
+
+Put in reinforcement-learning terms, the pieces already map:
+
+| Piece | Role |
+| --- | --- |
+| `RLM.Trace` | Trajectory — role, depth, slice, metric, tokens, model, text sidecars |
+| `RLM.Policy` | The policy seam; the thing that would be trained |
+| `RLM.Eval.Arms` | Per-decision reward over every candidate action |
+| `RLM.Eval.Scorecard` | Episode return |
+| `RLM.Replay` | Deterministic re-evaluation |
+| `RLM.State` | Durable per-slice findings |
+
+The contrast is the point. Prime Intellect's `rlm-harness` and Prime Agent both
+put the model in a REPL, so their trajectories depend on code the model wrote and
+cannot be re-scored without re-running against a live model — which is why
+`verifiers` has no offline path and `prime-rl` requires the live policy's own
+sampling logprobs. Here, a finished run is a *dataset*: imitation learning and
+offline policy comparison are possible where those systems need online rollouts.
+
+So the whole programme reduces to two halves:
+
+> An agent platform is a **trainable harness** when it can (a) run the recursive
+> pattern — depth-bounded sub-agents with runtime-decided fan-out — and (b) emit
+> a depth-tagged trajectory whose reward is computable offline.
+>
+> `rlm-core` already does (b). [ER-AIHUB-RECURSIVE-SUBAGENTS.md](ER-AIHUB-RECURSIVE-SUBAGENTS.md)
+> asks AI Hub for (a).
+
+What is missing on our side is only an export adapter onto whichever trainer is
+in use; the trace format already carries what one needs. What is missing on AI
+Hub's side is bounded recursion, and the depth tag that makes a recursive
+trajectory separable by level.
 
 ## 2. Non-goals for v1
 
@@ -231,12 +280,10 @@ Rows are grouped by **what we know about each item**, because an earlier version
 of this section mixed three different kinds of claim into one table and read as
 though all of them were scheduled.
 
-Provenance, stated once: the capabilities in §6.2 come from *our own* AI Hub
-harness spec — the document §0 describes as one that "asks the AI Hub team for
-core `%AI.*` additions." Those are requests we made. The class names in it are
-our proposals unless the AI Hub team has adopted them, and that document is not
-in this repository, so a reader here cannot check. **Nothing in §6.2 should be
-read as an InterSystems commitment, and no code should import those names.**
+Provenance, stated once: §6.2 is **our own wish list**. Those capabilities are
+things we think AI Hub should grow; none of them is an InterSystems commitment,
+none appears in the shipped distribution, and no code in this package imports or
+depends on any of them.
 
 ### 6.1 Present and verified
 
@@ -253,12 +300,12 @@ live instance.
 | `AutoCompactOnTokenLimit` | Budget + reserved synthesis slot | Different mechanism, same concern |
 | `%AI.RAG.VectorStore.IRIS` | — | Candidate `RLM.Source`; not yet explored |
 | `%AI.MCP.Service` + `iris-mcp-server` | — | Could publish a Source as MCP tools |
+| **Trainability** (§1.1) | `RLM.Trace` + `Replay` + `Eval.Arms` + `Scorecard` | **Already satisfied.** Needs an export adapter onto a trainer, which is ours to write — not an AI Hub dependency |
 
 ### 6.2 Requested by us, not observed anywhere
 
-Capabilities from our harness spec. Named by **what they do**, not by a class
-name, because the names were ours to propose and none of them appears in the
-distribution.
+Named by **what they do** rather than by a class name: any names we once
+proposed were ours, and none of them appears in the distribution.
 
 | Capability we asked for | What we do instead, today | If it ever lands |
 | --- | --- | --- |
@@ -267,8 +314,8 @@ distribution.
 | LID observation renderer | `Describe()` is already canonical | Delegate to it, keep `Describe()` as fallback |
 | Scope-reduction invariant | Depth cap + budget in `RLM.Budget` | Adopt in the `rlm-aihub` delegating variant |
 | Parallel map / fan-out operator | Sequential recursion | Parallel fan-out in `rlm-aihub` |
-| Trainability / RL environment | `RLM.Trace` + replay | Export adapter; trace format already sufficient |
 | Core trajectory record | `RLM.Trace` | Map onto it if it carries an extensible metric bag; else keep ours |
+| Depth on the trajectory and on outbound requests | Not applicable — recursion is ours | Drop our own depth column and read theirs |
 
 Every "today" column is a shipped, tested behaviour. That is the point of the
 grouping: **nothing in this package waits on anything in §6.2.** If none of it
@@ -315,7 +362,7 @@ could tell me".
 
 The seam that makes all of this cheap is that `RLM.Engine` depends on three
 abstractions and no framework. If AI Hub's primitives arrive in a different
-shape than the harness spec proposes, the blast radius is `RLMAIHub.Provider` —
+shape than §6.2 proposes, the blast radius is `RLMAIHub.Provider` —
 not the engine, not the sources, not the trace.
 
 ## 7. Milestones
