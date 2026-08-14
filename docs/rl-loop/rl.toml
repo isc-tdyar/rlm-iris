@@ -1,0 +1,51 @@
+# prime-rl: train the decomposition policy.
+#
+#   uv run rl @ rl.toml
+#
+# Two GPUs is the floor -- one inference, one trainer -- which is what the
+# reverse-text example in prime-rl runs on. Illustrative; not yet run.
+
+max_steps = 200
+seq_len = 8192
+
+[model]
+name = "Qwen/Qwen3-8B"
+
+[orchestrator]
+batch_size = 64
+group_size = 8
+# group_size matters more here than in most environments. GRPO's advantage is
+# computed within a group, and two rollouts over the same store differ only in
+# the dimensions they chose -- so the group is a direct comparison of decomposition
+# strategies on identical data. Small groups waste that.
+
+[orchestrator.train.sampling]
+max_completion_tokens = 2048
+
+[[orchestrator.train.source]]
+name = "rlm-iris"
+
+[orchestrator.train.source.env.taskset]
+id = "rlm-iris-v1"
+
+[orchestrator.train.source.env.taskset.config]
+questions = "questions.jsonl"
+
+# `bash` rather than `null`: the agent needs a tool loop to call the MCP toolset.
+# Nothing here needs a shell, but the harness has to be one that supports tools.
+[orchestrator.train.source.env.agent.harness]
+id = "bash"
+
+# subprocess is fine while IRIS is reachable from the host. Move to docker or
+# prime when rollouts run somewhere that needs the network policy declared.
+[orchestrator.train.source.env.agent.runtime]
+type = "subprocess"
+
+[orchestrator.algo]
+type = "grpo"
+
+[trainer.optim]
+lr = 1e-6
+
+[ckpt]
+[inference]

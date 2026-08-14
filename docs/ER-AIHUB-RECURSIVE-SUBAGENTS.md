@@ -69,6 +69,13 @@ Three yeses and we need nothing here, because span nesting gives us the depth
 dimension. If it's MCP-only, extending it to in-process agents is the ask, and
 sub-agents nesting under their parent is the part that matters.
 
+For what the trace feeds, [docs/rl-loop](https://github.com/isc-tdyar/rlm-iris/blob/claude/paper-relevance-rlm-kq3l7p/docs/rl-loop) has the other end of
+the flow written out: the decomposition served to an agent as MCP tools, a
+`verifiers` taskset whose reward is a query against IRIS rather than a judge
+model, and the prime-rl config that trains on it. The reward is free because a
+peek is a pure function of the store, so after a run finishes we can price every
+dimension the run *didn't* choose. That is the payoff the depth tag unlocks.
+
 **Let a tool take an argument the model can't see.** Python has `RunContext[T]`,
 excluded from the tool schema. ObjectScript has no equivalent, so a tool that
 needs a slice predicate, a tenant id or a row cap must either accept it as a
