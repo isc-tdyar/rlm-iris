@@ -7,6 +7,13 @@ tree, and let a tool take an argument the model can't see. Without them a
 recursive sub-agent system runs, but you can't train it. Detail below; design is
 yours.
 
+We wrote the pattern out as if it already worked, so you can read the shape
+rather than our description of it. Every line marked NOT TODAY is somewhere the
+platform has no equivalent, with a comment saying what we do instead:
+[Delegate.cls](https://github.com/isc-tdyar/rlm-iris/blob/claude/paper-relevance-rlm-kq3l7p/docs/aihub-wanted/Delegate.cls) is the recursive tool,
+[Run.cls](https://github.com/isc-tdyar/rlm-iris/blob/claude/paper-relevance-rlm-kq3l7p/docs/aihub-wanted/Run.cls) drives it and covers the trace and
+fan-out. Neither compiles; both live outside `src/`.
+
 ## What we're building
 
 Recursive decomposition of IRIS stores that can't be exported: a 400M-row
@@ -15,7 +22,9 @@ with no schema. Split the store, characterize each slice, split the interesting
 ones again, and let the model reason over bounded summaries at the top and actual
 records at the bottom, once the slices are small enough to read.
 
-It works today outside `%AI.*`. We want it on AI Hub so it inherits the provider,
+It works today outside `%AI.*` -- the engine is
+[RLM.Engine](https://github.com/isc-tdyar/rlm-iris/blob/claude/paper-relevance-rlm-kq3l7p/src/RLM/Engine.cls), about 500 lines, and the sources it runs
+over are [here](https://github.com/isc-tdyar/rlm-iris/blob/claude/paper-relevance-rlm-kq3l7p/src/RLM/Source). We want it on AI Hub so it inherits the provider,
 the authorization and audit policies, and the trajectory record, and so it's a
 platform capability rather than our library.
 
