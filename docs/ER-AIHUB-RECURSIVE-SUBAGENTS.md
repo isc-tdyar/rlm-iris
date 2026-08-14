@@ -4,8 +4,9 @@ Tom Dyar · 2026-08-12 · against `ai-core` @ `994c8f1`
 
 We need three things from the platform: bound the recursion, trace the whole
 tree, and let a tool take an argument the model can't see. Without them a
-recursive sub-agent system runs, but you can't train it. Detail below; design is
-yours.
+recursive sub-agent system runs, but you can't train it. Two of the three
+already have answers on the Python side, so some of this is parity rather than
+new work. Detail below; design is yours.
 
 We wrote the pattern out as if it already worked, so you can read the shape
 rather than our description of it. Every line marked NOT TODAY is somewhere the
@@ -83,6 +84,38 @@ model-visible argument, where the model can rewrite it, or hold it as instance
 state, which your own shell-tool docs warn is fragile behind a job pool. For us
 that argument is a security boundary.
 
+## The ObjectScript surface is behind the Python one
+
+`iris_llm` already ships `RunContext[T]`, and `python/advanced/runcontext_example.py`
+documents it as context parameters excluded from the LLM schema. That is the
+hidden argument above, in Python, today.
+
+The rest of the gap is in the RLM samples. The Python one, `python/rlm/toolset.py`,
+which we contributed, has a variable namespace persisted across calls
+(`store_var`, `get_var`, `peek_var`, `search_var`, `summarize_var`), a
+`spawn_subagent` with a sub-call counter and a stage trace, and an
+`execute_python` that runs in-process against `import iris` behind a builtins
+allowlist and a timeout. The ObjectScript sample has five tools over a `%String`
+searched by substring, and `RLMBridge` shells out to the Python one with
+`$ZF(-100)`.
+
+We are not asking you to port `execute_python`. It works in Python only because
+`exec` is free there, and the ObjectScript equivalent is `XECUTE`, which is not
+something to hand a model. The point is narrower: an ObjectScript agent has no
+in-process way to do what the Python agent does, so it leaves the process to get
+it.
+
+Two questions we can't answer without a build:
+
+- Can a `%AI.Tool` method be `[ Language = python ]` and still be discovered
+  with a correct schema? No sample class in the bundle uses it and the guide
+  never mentions embedded Python, so nothing shows either way.
+- If it can, does `import iris` inside it see the calling process's session
+  state?
+
+Two yeses and the gap mostly closes with no new primitive, and `RLMBridge`'s
+shell-out is a defect rather than a design.
+
 ## One thing to check first
 
 `ai-hub-eap#26`, and we're paraphrasing, so please check this against the issue: a
@@ -101,9 +134,8 @@ Fan-out is sequential. The guide says so, and `ParallelDelegation()`'s own comme
 disclaims its name. Not blocking, but decomposition is about examining many slices
 per decision.
 
-The ObjectScript RLM sample isn't recursive: no sub-call, no variable namespace,
-and `RLMBridge` shells out to the Python one. We're happy to fix that sample
-ourselves if it's useful. It's the part we can do from outside the platform.
+We're happy to bring the ObjectScript RLM sample up to the Python one ourselves
+if that's useful. It's the part we can do from outside the platform.
 
 We also have a read-only probe that dumps the live `%AI.*` surface with full
 signatures. It reads the dictionary, calls nothing, and can't hang. Say the word
