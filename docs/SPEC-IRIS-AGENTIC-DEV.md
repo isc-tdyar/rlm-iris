@@ -1,227 +1,217 @@
-# Spec: a minimal agent layer for stock IRIS
+# Spec 075: Recursive Decomposition Tools
 
-**For:** `iris-agentic-dev`
-**From:** work in `rlm-iris`
-**Date:** 2026-08-12
-**Status:** Draft. Written without access to the target repo, so reconcile the
-layout against what is already there.
+> Drafted in `rlm-iris` for `intersystems-community/iris-agentic-dev`. Move to
+> `specs/075-recursive-decomposition/spec.md` and renumber if 075 is taken.
 
-## Why
+## Problem
 
-Three things block the recursive sub-agent work, and all three come from the same
-place: `%AI.*` only exists on AI Hub builds, and those are WRC-gated.
+Some IRIS stores cannot be handed to an agent at all. A 400M-row
+`Ens.MessageHeader` under an SLA, a PHI-bearing clinical extent, a 40 GB global
+whose schema lives in a routine nobody owns. An agent asked "what is in here?"
+has three options today and all of them are bad: read a sample and generalize
+from it, run an aggregate it guessed at, or give up.
 
-- We cannot get an image. Docker Hub publishes `intersystems/iris-community`
-  through 2026.2 with no AI-suffixed tag; the AI builds come from
-  `containers.intersystems.com`, and a licence for one expired before we could
-  test with it.
-- We cannot put it in CI. Anything depending on `%AI.*` is untestable on a
-  runner, which means the interesting half of the design has no regression tests.
-- We cannot demonstrate the ask. `docs/ER-AIHUB-RECURSIVE-SUBAGENTS.md` asks the
-  AI Hub team for bounded recursion, a tree-spanning trace, and tool arguments
-  the model cannot see. A request is weaker than a working implementation.
+Sampling is the one that looks like it works. The first 50,000 nodes of a global
+written to since 2009 describe 2009, and the archiving decision turns on the
+decade after.
 
-So build the minimum on stock IRIS. Not a competitor to AI Hub, and not a fork of
-it: the smallest agent layer that makes the pattern real, so we can run it today,
-test it in CI, and hand the team something to look at instead of a document.
+The technique that does work is recursive decomposition: split the store, look at
+aggregate statistics for each slice, split the ones that are still mixed, and read
+actual records only once a slice is small enough that reading it is bounded. This
+is the Recursive Language Model pattern (Zhang, Kraska and Khattab,
+[arXiv:2512.24601](https://arxiv.org/abs/2512.24601)), and it is what
+[`rlm-iris`](https://github.com/isc-tdyar/rlm-iris) implements in ObjectScript.
 
-The bet is that all three asks are buildable in ObjectScript on a community
-image. Nothing in them needs the Rust bridge, a provider SDK, or anything
-`%Net.HttpRequest` cannot do.
+`iris-agentic-dev` is a better host for it than a library is, for three reasons
+that are already true of this repo:
 
-## Scope
+1. **The agent already exists.** Copilot and Claude Code are the agent. There is
+   no agent runtime to build, no LLM provider to wire, and no tool loop to write.
+2. **It runs on stock IRIS.** 2023.1+ over `/api/atelier`. The ObjectScript
+   library needs the same, but the AI-Hub-hosted version of this pattern needs a
+   WRC-gated image nobody outside InterSystems can get.
+3. **The governance is built.** `dispatch_gate()` already blocks bulk-PHI tools,
+   matches per-global PHI name patterns, and enforces a system blocklist. A
+   decomposition tool is a read against a scoped slice, which is exactly the shape
+   those gates already reason about.
 
-**In.** An agent that runs a bounded tool loop against an OpenAI-compatible
-endpoint, tools declared as ObjectScript classes with schemas derived from class
-metadata, sub-agents with a platform-enforced depth ceiling, one trace spanning
-the whole tree, and tool arguments excluded from the schema the model sees.
+## Goal
 
-**Out, deliberately.** RAG and vector stores, an MCP server, multimodal, token
-streaming, a policy framework beyond a single authorization hook, anything
-requiring the Rust bridge. AI Hub does all of these and does them better. The
-value here is the recursion primitive, not a second platform.
+Three tools that let an agent decompose a store it cannot read, plus the depth
+field the telemetry already has a slot for.
 
-**Also out:** matching `%AI.*` signatures. Do not shadow those names or mimic
-their shapes. The point is a design that can be *compared* with AI Hub's, and
-retired when AI Hub grows the same capability. Use an `Agentic.*` package and
-expect to delete it.
+## Non-goals
 
-## Dependencies
+- No agent, sub-agent, or LLM provider in this repo. The recursion is the client
+  agent calling tools; we serve the store, not the reasoning.
+- No new store access. `iris_global`, `iris_query` and the interop tools already
+  reach the data. This adds a *bounded aggregate* view over what they reach.
+- No replacement for `iris_query`. An agent that can already write the right
+  `GROUP BY` should keep doing that. These tools are for the case where it cannot,
+  because it does not know the shape yet.
 
-None. Do not depend on `rlm-iris`.
+## User stories
 
-That is worth stating because the temptation is real: `rlm-core` already has an
-LLM abstraction (`RLM.LLM`, with a REST implementation and a scripted stub), a
-trajectory record (`RLM.Trace`), and call accounting (`RLM.Budget`), all with no
-`%AI.*` dependency. Reusing them would save perhaps a week.
+**US1**: As a developer facing an undocumented 40 GB global, I want the agent to
+tell me what is in it without reading it, so I can decide whether it can be
+archived.
 
-Don't. `rlm-core` carries sources, lenses, policies and an evaluation harness
-that an agent layer has no business dragging in, and the coupling would run the
-wrong way. Build the four small classes independently and let `rlm-iris` depend
-on *this* repo later if it wants to.
+**US2**: As an SRE, I want the agent to find why interop throughput dropped on
+Tuesday by narrowing from 400M messages to the failing route, without exporting
+message bodies.
 
-## What to build
+**US3**: As a DBA on a PHI extent, I want the agent to characterize the data while
+the existing PHI gates still apply per slice, so nothing crosses a boundary the
+policy would have blocked.
 
-### A0 — Provider and one-shot completion
+**US4**: As someone measuring agents, I want the trace to say which tool call
+happened inside which, so a decomposition run can be scored after the fact.
 
-`Agentic.Provider` over `%Net.HttpRequest` to any OpenAI-compatible endpoint.
-Chat completions only. Config from environment variables or a settings global,
-resolved in a documented precedence order.
+## Tools
 
-Small, and mostly a known quantity: `RLM.LLM.REST` in `rlm-iris` is about 150
-lines and does exactly this, including the detail worth copying — it refuses a
-completion whose `finish_reason` is `length`, because half a sentence accepted as
-an answer becomes a finding in a report.
+### `iris_peek`
 
-Ship a scripted stub alongside it from day one. Every test below should run with
-no network and no key.
+Aggregate statistics for one slice. Never rows.
 
-### A1 — Tools and the loop
-
-The substantial one.
-
-**Tool declaration.** A tool is a class extending `Agentic.Tool` with an
-`Execute` method. Its JSON Schema is derived from the compiled method signature
-and the class comment, not hand-written. `%Dictionary.CompiledMethod.FormalSpec`
-carries the parameter list in the dictionary's own encoding
-(`name:type=default,...`); `UnitTest.RLMAIHub.AgentProbe` in `rlm-iris` already
-reads it, so the mechanism is proven even though the generator is not.
-
-Expect this to be the fiddliest part of the milestone. Type mapping is where it
-gets awkward: `%String`/`%Integer`/`%Boolean` are obvious, `%DynamicObject` is
-`object` with no properties, and a class-typed parameter has no honest JSON
-representation, so refuse it at registration rather than emitting something
-lossy. A tool that cannot be described should fail to register, loudly.
-
-**The loop.** Prompt, dispatch any tool calls, feed results back, repeat until
-the model returns no tool call or a bound trips. Bounds:
-
-- `MaxTurns` on the agent — the outer loop.
-- `MaxToolCalls` per turn.
-- `TimeoutMs` for the whole run, checked once per turn.
-
-Copy AI Hub's loop detection if it is cheap: after each round, if the tool calls
-and their results repeat without new information, nudge once and then fail with a
-distinguishable error. Their guide's claim that an unbounded inner cap is safe
-*because* loop detection is always on is a good design and worth having.
-
-### A2 — Sub-agents with an enforced ceiling
-
-The reason the repo exists.
-
-```objectscript
-Set child = parent.CreateSubAgent("You are a specialist.")
-Do child.Tools.Add(##class(MyApp.Tools.Delegate).%New())   // children may hold tools
-Set result = child.Run(child.NewSession(), task)
+```
+iris_peek(source, slice?) -> {
+  n, capped, metrics: {...}, describe: "..."
+}
 ```
 
-Requirements, and each is something AI Hub does not do today:
+`capped: true` when the count stopped at a limit, and `describe` words it as a
+floor rather than a total. This is the same contract as the existing `<Query>`
+envelope's `truncated` flag, and for the same reason: a model that reads a
+truncated count as a total inherits the error into every downstream claim.
 
-1. **`Depth` is set by the platform**, readable by the child, never threaded
-   through a prompt. A convention that a caller can forget is not a bound.
-2. **`MaxDepth` is enforced**, with a finite default. Suggest 3.
-3. **Behaviour at the ceiling is selectable** — refuse with a distinguishable
-   error, or degrade to a plain completion. Refuse is the default.
-4. **A child inherits the *remaining* budget**, not a fresh copy. This is the one
-   that matters most and the easiest to get wrong: if `TimeoutMs` and turn counts
-   reset per child, then every guard multiplies with depth instead of bounding
-   the tree, which is exactly the failure documented in the AI Hub request.
-5. **Slot and resource release on every exit path**: completion, failure,
-   cancellation, timeout, ceiling refusal.
+Cost is bounded by the walk, not the store. A 400-node global and a 400M-node one
+produce a peek of about the same size.
 
-Tests to write first, because they are the deliverable:
+### `iris_moves`
 
-- A three-level tree, every level holding a tool, returns the leaf's result to the
-  root.
-- A self-delegating tool with `MaxDepth = 2` stops at the third level with a
-  distinct error and the run completes.
-- A parent with `TimeoutMs = 5000` that spawns children does not exceed 5s total.
-- One child of twenty throws; the parent gets nineteen results and one failure,
-  and can tell which is which.
+The complete set of legal ways to split a slice.
 
-### A3 — One trace over the tree
-
-Every entry carries **depth** and **parent**, so the call graph reconstructs
-without inferring from timestamps. Persist to a global; `%Persistent` if a
-queryable trace is wanted, which it probably is.
-
-Per entry: role, depth, parent, agent id, tool name, model, tokens in and out,
-duration, error. Prompt and completion text in a sidecar rather than the row, so
-the row stays a fixed shape and a reader can enumerate structure without pulling
-megabytes.
-
-**OTel export.** ObjectScript has no OTel SDK, so the pragmatic route is Embedded
-Python and `opentelemetry-sdk`, emitting OTLP/gRPC. One span per agent run, one
-per tool call, one per model call, with sub-agent spans nested under their
-parent's — because span nesting *is* the depth dimension, and a trace you cannot
-separate by level cannot be filtered or credited.
-
-Worth checking before building: AI Hub already ships OTel for `iris-mcp-server`
-(`telemetry = true`, `OTEL_EXPORTER_OTLP_ENDPOINT`, OTLP/gRPC). If that machinery
-is reachable from ObjectScript, use it instead of a second exporter.
-
-### A4 — Tool arguments the model cannot see
-
-Python's `iris_llm` has `RunContext[T]`, whose parameters are *"excluded from the
-LLM tool schema"*. ObjectScript has no equivalent, so a tool needing a slice
-predicate, a tenant id or a row cap must either take it as a model-visible
-argument — where the model can rewrite it — or hold it as instance state.
-
-Mark a parameter or property as caller-supplied and omit it from the generated
-schema while still passing it at dispatch. A keyword on the property is probably
-the cleanest:
-
-```objectscript
-Property Scope As %String [ Agentic.Hidden ];
+```
+iris_moves(source, slice?) -> {
+  dimensions: [ {name, label, children: [{token, label}]} ]
+}
 ```
 
-Small once A1's generator exists, and it is the difference between a scoped tool
-call and a suggestion.
+The agent picks a dimension from this list. It does not compose a predicate, which
+is what makes US4 scoreable: at every decision there is a finite set of
+alternatives, so a run can be priced against the moves it did not make.
 
-### A5 — Fan-out
+### `iris_slice_read`
 
-Sibling children running concurrently, width decided at runtime. Lowest priority
-of the five: everything above is correctness, this is throughput.
+The records of a slice, once it is small enough.
 
-Non-obvious in ObjectScript, and worth timeboxing before committing. `JOB` gives
-separate processes with no shared memory, so results come back through a global
-and each child needs its own licence slot. Whether that is cheaper than
-sequential depends on how long a child takes, and the honest answer may be that
-it is not worth it below some fan-out width. Measure before building.
+```
+iris_slice_read(source, slice, limit=20) -> {
+  rows: [...], row_count, truncated, refused?: "reason"
+}
+```
 
-## Proving it
+Refuses a slice above the cap, and refuses one whose peek came back `capped` —
+a floor of five may be five million. The refusal carries the statistics instead,
+so the agent is told it is looking at a summary rather than quietly handed one.
 
-Two things, and the second is the one that changes the conversation.
+### Sources
 
-**In CI.** The whole suite runs on `intersystems/iris-community:latest-em` with a
-scripted provider, no network and no key. Depth, budget inheritance, schema
-generation and trace shape are all testable without a model. That alone is more
-regression coverage than the AI Hub path can have today.
+A source is a named, configured decomposition target: a class extent with declared
+dimensions, or a global with an allowlist and a visit cap. Configured in
+`.iris-agentic-dev.toml` rather than discovered, because a dimension is something
+an operator chose to expose:
 
-**Against the real workload.** Point it at `rlm-iris`. `RLM.Engine` currently does
-its own traversal over an explicit stack; with A2 in place it can spawn actual
-sub-agents, which closes the gap between what the request asks the platform for
-and what we do ourselves. Then the RL loop in
-`rlm-iris/docs/rl-loop` has something to run against on a stock image.
+```toml
+[[decompose.source]]
+name       = "orders"
+kind       = "table"
+class      = "Sales.Order"
+measure    = "Amount"
+dimensions = ["Region", "Channel"]
 
-## What this does to the AI Hub request
+[[decompose.source]]
+name       = "jrnaud"
+kind       = "global"
+global     = "^JRNAUD"
+visit_cap  = 50000
+depth_cap  = 8
+```
 
-It reverses its posture. Today it says "we need three things." With this repo
-working it says "here are the three things, built on a community image, with
-tests; here is what they cost us; absorb them or tell us why the shape is wrong."
+Declared rather than open is the whole security model. The agent can only name a
+source someone configured and a dimension someone listed, so `dispatch_gate()` has
+a finite surface to reason about instead of an arbitrary query.
 
-Every class here should be written expecting to be deleted. When AI Hub grows
-bounded recursion, `Agentic.Agent` becomes a thin adapter and then nothing. Design
-for that: keep the surface small, keep the seams where AI Hub's are, and do not
-accumulate features that would make the retirement painful.
+## Policy
 
-## Sizing
+These are read tools, so tier 1. But two things need saying:
 
-A0 and A1 are the bulk of it; A1's schema generator is the piece most likely to
-run long. A2 is small once A1 exists and is where the value is, so an honest
-sequence is A0 → A1 → A2 and then reassess, since A2 is the point at which the
-request can be rewritten.
+- **`iris_slice_read` is PHI-capable** and belongs on the bulk-PHI tool list.
+  `iris_peek` and `iris_moves` are not: they return counts, entropies and value-
+  length moments, never a field value.
+- **A source is subject to the existing global blocklist.** A `kind = "global"`
+  source naming `^%SYS` should fail at config load, not at call time.
 
-A3 is independent of A2 and could go in parallel if two people are on it. A4 is
-an afternoon once A1 is done. A5 should be timeboxed and abandoned if `JOB` makes
-it ugly.
+That split is worth keeping. The point of the pattern is that the expensive,
+sensitive call happens only at the bottom of a recursion, after the cheap ones
+have narrowed it. A policy that treats all three the same throws that away.
+
+## Telemetry
+
+`telemetry/trace_export.rs` already emits `{from, to, via, count, ts}` and already
+has this comment:
+
+> Sentinel `from` value for a top-level tool invocation with no calling tool
+> context — this feature only has tool-level granularity, not method-level
+> dispatch data.
+
+`NO_CALLER_SENTINEL` exists because there is nothing to put in `from`. A
+decomposition run is exactly the thing that would populate it: `iris_slice_read`
+on `region:emea/channel:web` happened *because* of an `iris_moves` on
+`region:emea`, which happened because of a peek at the root.
+
+Add to `ToolCallRecord`:
+
+- `depth` — how deep the slice path is.
+- `parent_call_id` — the call this one narrowed from.
+
+Then `from` carries a real caller and a decomposition trace reconstructs as a
+tree. That is a small change to a record that already exists, and it turns a flat
+list of tool calls into something that can be scored per level.
+
+## Why this matters beyond the tools
+
+With the tree in the trace, a finished decomposition is a dataset. Because the
+agent picked from an enumerated move list rather than composing a predicate, every
+alternative it did not take can be scored afterwards by peeking it — zero model
+calls, no judge, no human label. That makes this one of the cheapest RL
+environments available for agentic work, and the reward is a query rather than a
+model.
+
+`rlm-iris/docs/rl-loop` has the other end written out against `verifiers` and
+`prime-rl`. It is not part of this spec, but it is the reason the `depth` field is
+worth more than it looks.
+
+## Relationship to AI Hub
+
+None, and that is the point. AI Hub has `%AI.Agent` with sub-agents, and a request
+open against it for bounded recursion and a depth-tagged trace. Everything here
+runs on IRIS 2023.1 with no `%AI.*` at all, because the agent is the MCP client.
+
+If AI Hub grows in-process recursion, the two do not collide — that serves agents
+running inside the database, this serves agents outside it. Some sites will want
+both, and neither has to wait for the other.
+
+## Open questions
+
+1. **Does the `[[decompose.source]]` config belong in this repo or in IRIS?**
+   Configured here is simpler and matches how connections work. Configured in IRIS
+   would let a DBA own it, which is the more defensible answer for a PHI extent.
+2. **Should `iris_peek` reuse `rlm-iris`'s ObjectScript sources over `/api/atelier`,
+   or reimplement the walks in Rust?** Reusing means a dependency on a package
+   installed in the namespace. Reimplementing means the bounded-walk and cap logic
+   exists twice and can disagree.
+3. **What is the smallest useful set of statistics?** `rlm-iris` returns node and
+   child counts, the data/pointer split, subscript type mix, value-length moments
+   and top fanout for globals; count plus min/max/mean of a measure for tables.
+   That may be more than an agent needs, and each one costs walk time.
