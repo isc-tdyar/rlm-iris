@@ -2,6 +2,10 @@
 
 Tom Dyar · 2026-08-12 · against `ai-core` @ `994c8f1`
 
+**Three things, so a recursive sub-agent system on AI Hub can be *trained* and not
+just run: bound the recursion, trace the whole tree, and let a tool take an
+argument the model can't see.** Detail below. Design is yours.
+
 ## What we're building
 
 Recursive decomposition of IRIS stores that can't be exported — a 400M-row
@@ -37,17 +41,24 @@ We need a depth ceiling the platform enforces and a child that can read its own
 depth without the parent putting it in a prompt. Whether the ceiling refuses or
 degrades to a plain completion, we don't mind — as long as it isn't silent.
 
-**Put depth on the trajectory and on outbound calls.** This is the one we care
-most about. A trajectory you can't separate by level can't be filtered, credited,
-or trained on. Sessions are already `%Persistent` with per-iteration token counts;
-depth is the missing dimension. `rlm-harness` sets `X-RLM-Depth` on every request
-for exactly this reason.
+**Trace the whole tree.** This is the one we care most about, and it is the
+difference between recursion that works and recursion you can train on. A
+trajectory you can't separate by level can't be filtered, credited, or learned
+from — and with it, a finished run becomes a dataset you score offline instead of
+re-running. That's something the Python-REPL agents structurally can't do, because
+their traces depend on code the model wrote.
 
-With it, a finished run is a dataset you can score offline instead of re-running.
-That's a real advantage over the Python-REPL agents — their trajectories depend on
-code the model wrote, which is why `verifiers` has no offline training path at
-all. A tool-call trajectory over replayable operations doesn't have that problem,
-and AI Hub is a few fields away from it.
+You already ship OTel for `iris-mcp-server` (`telemetry = true`, OTLP/gRPC). We
+haven't seen what it emits, so these are questions rather than a request:
+
+- Does it cover `%AI.Agent` running in-process, or only calls crossing the MCP
+  boundary?
+- When an agent spawns a sub-agent, is that a child span?
+- Do model calls carry token counts and model id?
+
+Three yeses and we need nothing here — span nesting *is* the depth dimension. If
+it's MCP-only, extending it to in-process agents is the ask, with sub-agents
+nesting under their parent as the part that matters.
 
 **Let a tool take an argument the model can't see.** Python has `RunContext[T]`,
 excluded from the tool schema. ObjectScript has no equivalent, so a tool that
