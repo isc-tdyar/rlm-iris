@@ -190,8 +190,8 @@ Method TestReportWhetherAgentCarriesDepth()
 			If $ZConvert(nm, "L") [ "parent" { Set found = found_" "_nm }
 		}
 	}
-	Do $$$LogMessage("%AI.Agent depth/parent properties:"
-		_$Select(found="":" (none)", 1:found))
+	Set summary = $Select(found = "": " (none)", 1: found)
+	Do $$$LogMessage("%AI.Agent depth/parent properties:" _ summary)
 }
 
 }

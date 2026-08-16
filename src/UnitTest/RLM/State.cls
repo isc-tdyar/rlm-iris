@@ -18,7 +18,7 @@ Class UnitTest.RLM.State Extends %UnitTest.TestCase
 /// A finding written against a slice comes back under that slice.
 Method TestPutAndGetRoundTrip()
 {
-	Set state = ##class(RLM.State).%New(1)
+	Set state = ##class(RLM.State).%New($Increment(^||RLM.Trace))
 	Do state.Put("color:red", "finding", "600 rows, tightly grouped")
 
 	Set got = state.Get("color:red", "finding")
@@ -33,7 +33,7 @@ Method TestPutAndGetRoundTrip()
 /// deciding whether to redo work is exactly the caller that must tell them apart.
 Method TestHasDistinguishesEmptyFromAbsent()
 {
-	Set state = ##class(RLM.State).%New(2)
+	Set state = ##class(RLM.State).%New($Increment(^||RLM.Trace))
 	Do state.Put("color:red", "finding", "")
 
 	Do $$$AssertTrue(state.Has("color:red", "finding"), "an empty finding was recorded")
@@ -45,7 +45,7 @@ Method TestHasDistinguishesEmptyFromAbsent()
 /// A Paths() that quietly omitted it would lose the run's own answer.
 Method TestPathsIncludesTheRoot()
 {
-	Set state = ##class(RLM.State).%New(3)
+	Set state = ##class(RLM.State).%New($Increment(^||RLM.Trace))
 	Do state.Put("", "answer", "the store splits on colour")
 	Do state.Put("color:red", "finding", "tight")
 	Set paths = state.Paths()
@@ -59,7 +59,7 @@ Method TestPathsIncludesTheRoot()
 /// must return only the slices that recorded the key it was asked for.
 Method TestFindingsSelectsByKey()
 {
-	Set state = ##class(RLM.State).%New(4)
+	Set state = ##class(RLM.State).%New($Increment(^||RLM.Trace))
 	Do state.Put("color:red", "finding", "tight")
 	Do state.Put("color:red", "label", "red")
 	Do state.Put("color:blue", "label", "blue")
@@ -77,7 +77,7 @@ Method TestFindingsSelectsByKey()
 /// shallower one it replaces.
 Method TestRewriteReplacesRatherThanAccumulates()
 {
-	Set state = ##class(RLM.State).%New(5)
+	Set state = ##class(RLM.State).%New($Increment(^||RLM.Trace))
 	Do state.Put("color:red", "finding", "first pass")
 	Do state.Put("color:red", "finding", "second pass")
 
@@ -91,8 +91,8 @@ Method TestRewriteReplacesRatherThanAccumulates()
 /// shared by two runs loses the wrong one.
 Method TestClearRemovesOnlyThisRun()
 {
-	Set mine = ##class(RLM.State).%New(6)
-	Set theirs = ##class(RLM.State).%New(7)
+	Set mine = ##class(RLM.State).%New($Increment(^||RLM.Trace))
+	Set theirs = ##class(RLM.State).%New($Increment(^||RLM.Trace))
 	Do mine.Put("a", "finding", "mine")
 	Do theirs.Put("a", "finding", "theirs")
 	Do mine.Clear()
@@ -106,17 +106,27 @@ Method TestClearRemovesOnlyThisRun()
 /// a durable trace lands on a scratchpad that is already gone.
 Method TestDurableStateWritesToThePersistentGlobal()
 {
-	Set state = ##class(RLM.State).%New(8, 1)
+	// From the process-private counter even though the state under test is durable.
+	// What this needs is an id no other test in this process used, and the durable
+	// counter advances independently of that one, so drawing from it can still land
+	// on an id a process-private run already holds.
+	Set runId = $Increment(^||RLM.Trace)
+	Set state = ##class(RLM.State).%New(runId, 1)
 	Do state.Put("color:red", "finding", "durable")
 
-	Set durable = $Data(^RLM.State(8, "color:red", "finding"))
+	// Through the API rather than the raw subscript: how a path is spelled under
+	// the global is Sub()'s business, and a test that hardcodes it breaks on a
+	// change that harms nothing.
+	Do $$$AssertEquals(state.Get("color:red", "finding"), "durable", "written and read back")
+
+	Set durable = $Data(^RLM.State(runId))
 	Do $$$AssertTrue(durable, "written to ^RLM.State")
 
-	Set private = $Data(^||RLM.State(8))
+	Set private = $Data(^||RLM.State(runId))
 	Do $$$AssertNotTrue(private, "and not to the process-private one")
 
 	Do state.Clear()
-	Set gone = $Data(^RLM.State(8))
+	Set gone = $Data(^RLM.State(runId))
 	Do $$$AssertNotTrue(gone, "and Clear reaches the durable global")
 }
 

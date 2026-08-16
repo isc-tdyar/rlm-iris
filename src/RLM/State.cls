@@ -21,6 +21,11 @@
 /// without either having to know the other exists. The empty path is the root,
 /// which is where a run's own question and answer belong.
 ///
+/// Paths are stored prefixed rather than raw, because IRIS rejects a null
+/// subscript and the root's path is the empty string. Sub() is the only place
+/// that knows this, and the prefix is constant, so paths keep their collation
+/// order relative to each other and the root sorts first without a special case.
+///
 /// Every global access copies ..Root into a local before the indirection. `@..Root@(...)`
 /// is not reliably a legal indirection target -- the operand wants a variable rather
 /// than a property reference -- and the failure would be at compile time on every
@@ -37,6 +42,17 @@ Property Root As %String [ Private ];
 
 /// Whether writes survive the process.
 Property Durable As %Boolean [ InitialExpression = 0 ];
+
+/// The subscript a slice path is stored under.
+///
+/// `^RLM.State(runId, "")` is not a legal global reference -- IRIS throws
+/// `<SUBSCRIPT>` on a null subscript -- and the root slice's path is exactly the
+/// empty string. Prefixing keeps every subscript non-null without changing what a
+/// path means to anything outside this class.
+ClassMethod Sub(path As %String) As %String [ Private ]
+{
+	Quit "p" _ path
+}
 
 Method %OnNew(
 	runId As %Integer,
@@ -60,7 +76,7 @@ Method Put(
 {
 	If key = "" { Quit $$$ERROR($$$GeneralError, "a state key may not be empty") }
 	Set ref = ..Root
-	Set @ref@(..RunId, path, key) = value
+	Set @ref@(..RunId, ..Sub(path), key) = value
 	Quit $$$OK
 }
 
@@ -75,8 +91,8 @@ Method Get(
 	default As %String = "") As %String
 {
 	Set ref = ..Root
-	If '$Data(@ref@(..RunId, path, key)) { Quit default }
-	Quit @ref@(..RunId, path, key)
+	If '$Data(@ref@(..RunId, ..Sub(path), key)) { Quit default }
+	Quit @ref@(..RunId, ..Sub(path), key)
 }
 
 /// Whether this slice has recorded `key` already.
@@ -89,7 +105,7 @@ Method Has(
 	key As %String) As %Boolean
 {
 	Set ref = ..Root
-	Quit ''$Data(@ref@(..RunId, path, key))
+	Quit ''$Data(@ref@(..RunId, ..Sub(path), key))
 }
 
 /// Every key this slice wrote, in collation order.
@@ -98,7 +114,7 @@ Method Keys(path As %String = "") As %List
 	Set ref = ..Root
 	Set out = "", key = ""
 	For {
-		Set key = $Order(@ref@(..RunId, path, key))
+		Set key = $Order(@ref@(..RunId, ..Sub(path), key))
 		Quit:key=""
 		Set out = out_$ListBuild(key)
 	}
@@ -113,16 +129,12 @@ Method Keys(path As %String = "") As %List
 Method Paths() As %List
 {
 	Set ref = ..Root
-	Set out = "", path = ""
+	Set out = "", sub = ""
 	For {
-		Set path = $Order(@ref@(..RunId, path))
-		Quit:path=""
-		Set out = out_$ListBuild(path)
+		Set sub = $Order(@ref@(..RunId, sub))
+		Quit:sub=""
+		Set out = out_$ListBuild($Extract(sub, 2, *))
 	}
-	// $ORDER seeded with "" returns the first subscript *after* "", so the root's
-	// own entry is never reached by the loop. It is exactly where a run's question
-	// and answer go, so omitting it would lose the run's own result.
-	If $Data(@ref@(..RunId, "")) { Set out = $ListBuild("")_out }
 	Quit out
 }
 
